@@ -196,6 +196,72 @@ aside {
 .lo-ok   { background:#051a0a; border:0.5px solid #1a4a22; color:#3B9E60; }
 .lo-off  { background:#1a0808; border:0.5px solid #5a1a1a; color:#e24b4a; animation: lo-blink 0.8s infinite; }
 @keyframes lo-blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+/* ── FALL DETECTION PANEL ── */
+.fall-panel {
+  border-radius: 10px;
+  border: 0.5px solid rgba(255,255,255,0.07);
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.fall-panel.fall-active {
+  border-color: rgba(226,75,74,0.6);
+  box-shadow: 0 0 18px rgba(226,75,74,0.12);
+}
+.fall-panel.fall-safe {
+  border-color: rgba(59,158,96,0.4);
+}
+.fall-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 0.5px solid rgba(255,255,255,0.06);
+}
+.fall-verdict {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; transition: color 0.3s;
+}
+.fall-verdict.v-fall    { color: var(--red); }
+.fall-verdict.v-safe    { color: var(--green); }
+.fall-verdict.v-waiting { color: var(--muted); }
+.fall-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.fall-prob-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px;
+}
+.fall-prob-label { color: var(--muted); }
+.fall-prob-num {
+  font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: color 0.3s;
+}
+.fall-prob-num.high { color: var(--red); }
+.fall-prob-num.low  { color: var(--green); }
+.fall-prob-num.none { color: var(--muted); }
+.fall-bar-wrap {
+  height: 5px; background: rgba(255,255,255,0.06);
+  border-radius: 3px; overflow: hidden;
+}
+.fall-bar-fill {
+  height: 100%; border-radius: 3px;
+  width: 0%; transition: width 0.15s, background 0.3s;
+}
+.fall-flash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: rgba(226,75,74,0.07);
+  opacity: 0; border-radius: 0;
+  transition: opacity 0.1s;
+}
+.fall-flash.show { opacity: 1; }
+.fall-history {
+  display: flex; gap: 3px; align-items: center;
+}
+.fall-tick {
+  width: 6px; height: 14px; border-radius: 2px;
+  background: rgba(255,255,255,0.06); flex-shrink: 0;
+  transition: background 0.2s;
+}
+.fall-tick.t-fall { background: var(--red); }
+.fall-tick.t-safe { background: var(--green); opacity: 0.5; }
 .wire-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .wire-table th { color: var(--muted); font-weight: 500; text-align: left; padding: 2px 4px; border-bottom: 0.5px solid var(--border); }
 .wire-table td { padding: 3px 4px; color: #bbb; }
@@ -220,6 +286,7 @@ aside {
   <!-- 3D canvas -->
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
+    <div class="fall-flash" id="fall-flash"></div>
 
     <!-- BPM badge -->
     <div class="bpm-badge">
@@ -255,6 +322,30 @@ aside {
 
   <!-- Sidebar -->
   <aside>
+
+    <!-- ── FALL DETECTION ── -->
+    <div class="fall-panel fall-safe" id="fall-panel">
+      <div class="fall-header">
+        <div class="panel-title" style="margin:0">🤖 Fall Detection</div>
+        <div class="fall-verdict v-waiting" id="fall-verdict">WAITING</div>
+      </div>
+      <div class="fall-body">
+        <div class="fall-prob-row">
+          <span class="fall-prob-label">Fall probability</span>
+          <span class="fall-prob-num none" id="fall-prob-num">--%</span>
+        </div>
+        <div class="fall-bar-wrap">
+          <div class="fall-bar-fill" id="fall-bar" style="background:var(--green)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:10px;color:var(--muted)">History (last 20)</span>
+          <span style="font-size:10px;color:var(--muted)">Threshold: 35%</span>
+        </div>
+        <div class="fall-history" id="fall-history">
+          <!-- ticks injected by JS -->
+        </div>
+      </div>
+    </div>
 
     <div>
       <div class="panel-title">❤️ Heart Rate</div>
@@ -620,6 +711,62 @@ function setStatus(s, text) {
   document.getElementById('conn-btn').className = 'btn' + (s==='connected'?' danger':'');
 }
 
+// ════════════════════════════════════════════════════════════
+//  FALL DETECTION UI
+// ════════════════════════════════════════════════════════════
+const FALL_HISTORY_LEN = 20;
+const fallHistory = [];
+let flashTimer = null;
+
+function updateFall(prob, isFall) {
+  const panel   = document.getElementById('fall-panel');
+  const verdict = document.getElementById('fall-verdict');
+  const probNum = document.getElementById('fall-prob-num');
+  const bar     = document.getElementById('fall-bar');
+  const flash   = document.getElementById('fall-flash');
+  const histEl  = document.getElementById('fall-history');
+
+  const pct = (prob * 100).toFixed(1);
+
+  // Verdict label
+  if (isFall) {
+    verdict.textContent = '⚠ FALL';
+    verdict.className = 'fall-verdict v-fall';
+    panel.className = 'fall-panel fall-active';
+    probNum.className = 'fall-prob-num high';
+    bar.style.background = 'var(--red)';
+    // Flash the 3D canvas
+    flash.classList.add('show');
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => flash.classList.remove('show'), 400);
+  } else {
+    verdict.textContent = '✓ SAFE';
+    verdict.className = 'fall-verdict v-safe';
+    panel.className = 'fall-panel fall-safe';
+    probNum.className = 'fall-prob-num low';
+    bar.style.background = 'var(--green)';
+  }
+
+  probNum.textContent = pct + '%';
+  bar.style.width = Math.min(100, prob * 100) + '%';
+
+  // History ticks
+  fallHistory.push(isFall);
+  if (fallHistory.length > FALL_HISTORY_LEN) fallHistory.shift();
+  histEl.innerHTML = '';
+  fallHistory.forEach(f => {
+    const t = document.createElement('div');
+    t.className = 'fall-tick ' + (f ? 't-fall' : 't-safe');
+    histEl.appendChild(t);
+  });
+  // Pad remaining slots
+  for (let i = fallHistory.length; i < FALL_HISTORY_LEN; i++) {
+    const t = document.createElement('div');
+    t.className = 'fall-tick';
+    histEl.appendChild(t);
+  }
+}
+
 function barPct(v, range) { return Math.min(100, Math.max(0, (v+range)/(range*2)*100)); }
 
 function getHrStatus(bpm) {
@@ -696,6 +843,11 @@ function updateUI(d) {
   if (d.bpm > 0) {
     document.getElementById('heart-icon').style.animationDuration = (60/d.bpm).toFixed(2)+'s';
   }
+  // ── Fall detection ──
+  if (d.fall_prob !== undefined && d.fall_prob >= 0) {
+    updateFall(d.fall_prob, d.is_fall);
+  }
+
   const serialEl = document.getElementById('serial');
   const row = document.createElement('div');
   row.textContent = `${d.counter}\t${d.ax.toFixed(2)}\t${d.ay.toFixed(2)}\t${d.az.toFixed(2)}\tecg:${d.ecg}\tbpm:${d.bpm.toFixed(0)}`;

@@ -15,6 +15,9 @@ DEBUG           = True        # <-- ganti False setelah berhasil
 
 clients = set()
 
+# ── Fall detection state (persists across lines) ──
+fall_state = {"prob": -1.0, "is_fall": False}
+
 def list_ports():
     ports = serial.tools.list_ports.comports()
     if ports:
@@ -23,6 +26,25 @@ def list_ports():
             print(f"       {p.device} — {p.description}")
     else:
         print("[info] Tidak ada port serial ditemukan.")
+
+def parse_fall_line(line: str) -> bool:
+    """
+    Parses lines like:
+      FALL_PROB:0.996\tFALL:1
+    Updates global fall_state. Returns True if a fall line was parsed.
+    """
+    line = line.strip()
+    if "FALL_PROB:" not in line:
+        return False
+    try:
+        parts = line.split("\t")
+        prob_part = next(p for p in parts if p.startswith("FALL_PROB:"))
+        fall_part = next(p for p in parts if p.startswith("FALL:"))
+        fall_state["prob"]    = float(prob_part.split(":")[1])
+        fall_state["is_fall"] = int(fall_part.split(":")[1]) == 1
+        return True
+    except Exception:
+        return False
 
 def parse_line(line: str):
     """
@@ -51,6 +73,8 @@ def parse_line(line: str):
                     "lo_p":      int(float(parts[10])) if len(parts) > 10 else 1,
                     "lo_n":      int(float(parts[11])) if len(parts) > 11 else 1,
                     "leads_off": int(float(parts[12])) if len(parts) > 12 else 1,
+                    "fall_prob": fall_state["prob"],
+                    "is_fall":   fall_state["is_fall"],
                 }
                 return data
             except (ValueError, IndexError):
@@ -91,6 +115,12 @@ async def serial_reader():
 
                 if DEBUG and line_count <= 15:
                     print(f"[DEBUG {line_count:02d}] {repr(line)}")
+
+                # Try fall detection line first
+                if parse_fall_line(line):
+                    if DEBUG and line_count <= 15:
+                        print(f"[FALL] prob={fall_state['prob']:.3f} is_fall={fall_state['is_fall']}")
+                    continue
 
                 data = parse_line(line)
                 if data:

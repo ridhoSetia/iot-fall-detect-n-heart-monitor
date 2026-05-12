@@ -16,8 +16,8 @@
 
 // ── Pin definitions ────────────────────────────────────────────
 #define ECG_PIN 36     // OUTPUT AD8232 → ADC1_CH0 (input-only)
-#define LEADS_OFF_P 25 // LO+ → INPUT_PULLUP, aktif HIGH saat elektroda lepas
-#define LEADS_OFF_N 26 // LO- → INPUT + 10kΩ eksternal ke GND (pull-down)
+#define LEADS_OFF_P 32 // LO+ → INPUT_PULLUP, aktif HIGH saat elektroda lepas
+#define LEADS_OFF_N 35 // LO- → INPUT + 10kΩ eksternal ke GND (pull-down)
 
 // ── GY521 ──────────────────────────────────────────────────────
 GY521 sensor(0x68);
@@ -216,7 +216,7 @@ void setup()
     Serial.println("Could not connect to GY521...");
     delay(1000);
   }
-  sensor.setAccelSensitivity(0);
+  sensor.setAccelSensitivity(3);
   sensor.setGyroSensitivity(0);
   sensor.setThrottle();
   for (int i = 0; i < WINDOW_SIZE; i++)
@@ -293,6 +293,7 @@ void loop()
   {
     ecg_raw = analogRead(ECG_PIN);
     float ecg_filtered = filterECG(ecg_raw);
+    Serial.print("FILT:"); Serial.println(ecg_filtered); // temporary debug
     detectPeak(ecg_filtered);
   }
   else
