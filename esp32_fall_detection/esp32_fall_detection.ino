@@ -13,8 +13,8 @@
 #include "model.h" // your .h model file — check the array name inside!
 
 // -- Konfigurasi WiFi & MQTT --
-const char* ssid = "Gada Kuota";
-const char* password = "1234567891011";
+const char* ssid = "Beli kuota aja sudah erna";
+const char* password = "turuntangan";
 const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 const char* mqtt_topic = "v1/device/health_monitor";
@@ -214,33 +214,36 @@ uint32_t counter = 0;
 // ── EdgeNeuron — Fall Detection ────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
-#define N_FEATURES 24
-#define FALL_THRESHOLD 0.35f
+#define N_FEATURES 47
+#define FALL_THRESHOLD 0.48f
 #define ML_WINDOW_SAMPLES 75
 #define ML_STRIDE 37
 
-const float scaler_mean[24] = {-0.005458f, 0.130513f, -0.383600f, 0.343179f, 0.726779f, 0.242416f, 0.698473f, 0.226846f, 0.259893f, 1.314582f, 1.054689f, 0.763832f, -0.112413f, 0.156352f, -0.583839f, 0.223832f, 0.807671f, 0.374166f, 1.380413f, 0.547857f, 2.440632f, 1.759238f, 1.048198f, 0.214967f};
-const float scaler_std[24] = {0.347560f, 0.182964f, 0.860372f, 0.751155f, 1.232485f, 0.283975f, 0.432986f, 0.333587f, 0.767390f, 1.186798f, 1.603372f, 0.352453f, 0.424153f, 0.189090f, 0.933041f, 0.679870f, 1.185326f, 0.261600f, 0.233045f, 1.224126f, 5.529463f, 1.429443f, 0.120236f, 0.320587f};
+const float scaler_mean[47] = {-0.005458f, 0.130513f, -0.383600f, 0.343179f, 0.726779f, 0.242416f, 0.698473f, 0.226846f, 0.259893f, 1.314582f, 1.054689f, 0.763832f, -0.112413f, 0.156352f, -0.583839f, 0.223832f, 0.807671f, 0.374166f, -0.072624f, 2.557644f, -6.650922f, 6.069404f, 12.720326f, 2.079424f, 0.264943f, 2.144202f, -4.511122f, 4.963250f, 9.474372f, 1.966867f, -0.031826f, 1.731597f, -3.953468f, 3.984985f, 7.938453f, 1.424057f, 1.380413f, 0.547857f, 2.440632f, 1.759238f, 1.048198f, 0.214967f, 5.470347f, 10.556951f, 3.801863f, 2.182314f, 0.096667f};
+const float scaler_std[47] = {0.347560f, 0.182964f, 0.860372f, 0.751155f, 1.232485f, 0.283975f, 0.432986f, 0.333587f, 0.767390f, 1.186798f, 1.603372f, 0.352453f, 0.424153f, 0.189090f, 0.933041f, 0.679870f, 1.185326f, 0.261600f, 1.261780f, 3.650707f, 11.064667f, 9.599742f, 19.253976f, 2.748286f, 1.736150f, 2.660111f, 6.892009f, 6.645374f, 12.261871f, 2.321153f, 1.074681f, 2.380688f, 5.974141f, 6.323863f, 11.247587f, 1.952207f, 0.233045f, 1.224126f, 5.529463f, 1.429443f, 0.120236f, 0.320587f, 6.311061f, 14.174370f, 4.312091f, 2.869851f, 0.298456f};
 
 // ── Tensor arena ───────────────────────────
-constexpr int kTensorArenaSize = 60 * 1024;  // 60KB
+constexpr int kTensorArenaSize = 30 * 1024;  // 60KB
 alignas(16) uint8_t tensor_arena[kTensorArenaSize];
 
 // ── Sliding window buffers ──────────────────────────────────────
 float ml_ax[ML_WINDOW_SAMPLES], ml_ay[ML_WINDOW_SAMPLES], ml_az[ML_WINDOW_SAMPLES];
+float ml_gx[ML_WINDOW_SAMPLES], ml_gy[ML_WINDOW_SAMPLES], ml_gz[ML_WINDOW_SAMPLES];
 int ml_idx = 0;
 bool ml_window_ready = false;
 
-void ml_push_sample(float ax, float ay, float az) {
-  ml_ax[ml_idx] = ax;
-  ml_ay[ml_idx] = ay;
-  ml_az[ml_idx] = az;
+void ml_push_sample(float ax, float ay, float az, float gx, float gy, float gz) {
+  ml_ax[ml_idx] = ax;  ml_ay[ml_idx] = ay;  ml_az[ml_idx] = az;
+  ml_gx[ml_idx] = gx;  ml_gy[ml_idx] = gy;  ml_gz[ml_idx] = gz;
   ml_idx++;
   if (ml_idx >= ML_WINDOW_SAMPLES) {
     ml_window_ready = true;
     memmove(ml_ax, ml_ax + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
     memmove(ml_ay, ml_ay + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
     memmove(ml_az, ml_az + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
+    memmove(ml_gx, ml_gx + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
+    memmove(ml_gy, ml_gy + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
+    memmove(ml_gz, ml_gz + ML_STRIDE, (ML_WINDOW_SAMPLES - ML_STRIDE) * sizeof(float));
     ml_idx = ML_WINDOW_SAMPLES - ML_STRIDE;
   }
 }
@@ -305,6 +308,53 @@ void extract_features(float* features) {
   features[18]=sma;
   features[19]=res_skew; features[20]=res_kurt;
   features[21]=res_peak; features[22]=res_mean; features[23]=res_std;
+
+  // ── Gyro per-axis stats (mirror accel pattern) ─────────────
+  float gx_mean, gx_std, gx_min, gx_max, gx_range, gx_abs_mean;
+  float gy_mean, gy_std, gy_min, gy_max, gy_range, gy_abs_mean;
+  float gz_mean, gz_std, gz_min, gz_max, gz_range, gz_abs_mean;
+
+  axis_stats(ml_gx, ML_WINDOW_SAMPLES, gx_mean, gx_std, gx_min, gx_max, gx_range, gx_abs_mean);
+  axis_stats(ml_gy, ML_WINDOW_SAMPLES, gy_mean, gy_std, gy_min, gy_max, gy_range, gy_abs_mean);
+  axis_stats(ml_gz, ML_WINDOW_SAMPLES, gz_mean, gz_std, gz_min, gz_max, gz_range, gz_abs_mean);
+
+  features[24]=gx_mean;  features[25]=gx_std;   features[26]=gx_min;   features[27]=gx_max;
+  features[28]=gx_range; features[29]=gx_abs_mean;
+  features[30]=gy_mean;  features[31]=gy_std;   features[32]=gy_min;   features[33]=gy_max;
+  features[34]=gy_range; features[35]=gy_abs_mean;
+  features[36]=gz_mean;  features[37]=gz_std;   features[38]=gz_min;   features[39]=gz_max;
+  features[40]=gz_range; features[41]=gz_abs_mean;
+
+  // ── Gyro combined ──────────────────────────────────────────
+  float gyro_res[ML_WINDOW_SAMPLES];
+  for (int i = 0; i < ML_WINDOW_SAMPLES; i++)
+    gyro_res[i] = sqrtf(ml_gx[i]*ml_gx[i] + ml_gy[i]*ml_gy[i] + ml_gz[i]*ml_gz[i]);
+
+  float gyro_sma = 0, gyro_peak = 0, gyro_mean = 0, gyro_std = 0;
+  for (int i = 0; i < ML_WINDOW_SAMPLES; i++) {
+    gyro_sma  += fabsf(ml_gx[i]) + fabsf(ml_gy[i]) + fabsf(ml_gz[i]);
+    gyro_mean += gyro_res[i];
+    if (gyro_res[i] > gyro_peak) gyro_peak = gyro_res[i];
+  }
+  gyro_sma  /= ML_WINDOW_SAMPLES;
+  gyro_mean /= ML_WINDOW_SAMPLES;
+  for (int i = 0; i < ML_WINDOW_SAMPLES; i++)
+    gyro_std += (gyro_res[i] - gyro_mean) * (gyro_res[i] - gyro_mean);
+  gyro_std = sqrtf(gyro_std / ML_WINDOW_SAMPLES);
+
+  features[42]=gyro_sma;
+  features[43]=gyro_peak;
+  features[44]=gyro_mean;
+  features[45]=gyro_std;
+
+  // ── Cross-sensor correlation ───────────────────────────────
+  float cov = 0, std_a = 0, std_g = 0;
+  for (int i = 0; i < ML_WINDOW_SAMPLES; i++) {
+    cov   += (res[i] - res_mean) * (gyro_res[i] - gyro_mean);
+    std_a += (res[i] - res_mean) * (res[i] - res_mean);
+    std_g += (gyro_res[i] - gyro_mean) * (gyro_res[i] - gyro_mean);
+  }
+  features[46] = cov / (sqrtf(std_a * std_g) + 1e-9f);
 }
 
 void run_inference() {
@@ -396,7 +446,7 @@ if (!client.connected()) {
   float gz = sensor.getGyroZ();
   float t = sensor.getTemperature();
 
-  ml_push_sample(raw_ax, raw_ay, raw_az);
+  ml_push_sample(raw_ax, raw_ay, raw_az, gx, gy, gz);
   if (ml_window_ready) {
     run_inference();
     ml_window_ready = false;
