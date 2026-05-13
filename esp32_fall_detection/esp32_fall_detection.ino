@@ -5,10 +5,26 @@
 #include "GY521.h"
 #include <Wire.h>
 #include "WiFi.h"
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 // ── EdgeNeuron TinyML ───────────────────────────────────────────
 #include <EdgeNeuron.h>
 #include "model.h" // your .h model file — check the array name inside!
+
+// -- Konfigurasi WiFi & MQTT --
+const char* ssid = "Gada Kuota";
+const char* password = "1234567891011";
+const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
+const char* mqtt_topic = "v1/device/health_monitor";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// Timer untuk throttling pengiriman data (agar tidak spamming broker)
+unsigned long lastMsg = 0;
+const long interval = 200; // Kirim data setiap 200ms
 
 // ── Pin definitions ────────────────────────────────────────────
 #define ECG_PIN 36
@@ -24,6 +40,66 @@ int lo_p_count = LO_DEBOUNCE;
 int lo_n_count = LO_DEBOUNCE;
 bool lo_p_stable = true;
 bool lo_n_stable = true;
+
+void setup_wifi() {
+  delay(10);
+  Serial.print("\nConnecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected");
+}
+
+void reconnect() {
+  // Loop hingga terkoneksi kembali
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Buat ID Client unik (berdasarkan MAC Address)
+    String clientId = "ESP32-Client-";
+    clientId += String(WiFi.macAddress());
+    
+    if (client.connect(clientId.c_str())) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+bool last_fall_state = false;
+
+void triggerEmergencyLED(bool is_falling) {
+  const char* led_topic = "v1/device/emergency_led";
+  if (is_falling) {
+    client.publish(led_topic, "ON");
+  } else {
+    client.publish(led_topic, "OFF");
+  }
+}
+
+void sendSensorData(float current_bpm, int raw_ecg, bool fall_status) {
+  StaticJsonDocument<256> doc;
+  
+  doc["bpm"] = current_bpm;
+  doc["ecg_raw"] = raw_ecg;
+  
+  // Logika 2 Kondisi: Fall/Safe
+  doc["activity_status"] = fall_status ? "FALL" : "SAFE";
+  
+  // Status Lead Sensor (Kesehatan Sensor)
+  doc["sensor_status"] = "CONNECTED";
+  
+  char buffer[256];
+  serializeJson(doc, buffer);
+  client.publish(mqtt_topic, buffer);
+}
 
 void updateLeadsDebounce(bool raw_p, bool raw_n)
 {
@@ -257,7 +333,9 @@ void run_inference() {
 
 // ══════════════════════════════════════════════════════════════
 void setup() {
-  WiFi.mode(WIFI_OFF);
+  // Matikan fitur hemat daya WiFi untuk stabilitas pengiriman data sensor
+  WiFi.setSleep(false);
+
   btStop();
   delay(1000);
 
@@ -296,10 +374,18 @@ void setup() {
 
   Serial.println("ESP32 GY521+AD8232 ready");
   Serial.println("counter\tax\tay\taz\tgx\tgy\tgz\ttemp\tecg\tbpm\tlo_p\tlo_n\tleads_off");
+
+  setup_wifi();
+  client.setServer(mqtt_server, mqtt_port);
 }
 
 // ══════════════════════════════════════════════════════════════
 void loop() {
+if (!client.connected()) {
+    reconnect();
+  }
+  client.loop(); // Menangani proses background MQTT
+
   sensor.read();
   float raw_ax = sensor.getAccelX();
   float raw_ay = sensor.getAccelY();
@@ -350,5 +436,28 @@ void loop() {
   Serial.println(leads_off ? 1 : 0);
 
   counter++;
-  delay(20);
-}
+
+  // Ambil hasil inferensi fall detection
+  // Misalkan variabel 'global_is_fall' diupdate di run_inference()
+  bool current_fall_state = (getModelOutput(0) < FALL_THRESHOLD);
+
+  // Throttling: Kirim data tanpa memblokir loop utama
+  unsigned long now = millis();
+  if (now - lastMsg > interval) {
+    lastMsg = now;
+    
+    // Kirim data hanya jika leads terpasang (lo_p_stable & lo_n_stable FALSE)
+    if (!leads_off) {
+      sendSensorData(bpm, ecg_raw, current_fall_state);
+    } else {
+      // Kirim status 'LEADS_OFF' jika sensor tidak menempel di tubuh
+      StaticJsonDocument<100> doc;
+      doc["status"] = "DISCONNECTED";
+      char buffer[100];
+      serializeJson(doc, buffer);
+      client.publish(mqtt_topic, buffer);
+    }
+  }
+
+  // Delay minimal untuk stabilitas sampling rate (20ms = 50Hz)
+  delay(20);}
