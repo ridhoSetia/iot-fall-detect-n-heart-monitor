@@ -12,19 +12,29 @@
 #include <EdgeNeuron.h>
 #include "model.h" // your .h model file — check the array name inside!
 
+// At the top with your other globals
+float global_fall_prob = 0.0f;
+bool global_is_fall = false;
+
 // -- Konfigurasi WiFi & MQTT --
 const char* ssid = "Beli kuota aja sudah erna";
 const char* password = "turuntangan";
-const char* mqtt_server = "broker.hivemq.com";
+
+const char* mqtt_server = "mqtt.antares.id";
 const int mqtt_port = 1883;
-const char* mqtt_topic = "v1/device/health_monitor";
+const char* antares_access_key = "14a1e0a864fbcbf2:59175a776d9717b8"; // dari akun Antares kamu
+const char* antares_project = "PA-IOT";
+const char* antares_device  = "fall-00";
+
+char mqtt_topic[128];
+char led_topic[128];
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Timer untuk throttling pengiriman data (agar tidak spamming broker)
 unsigned long lastMsg = 0;
-const long interval = 200; // Kirim data setiap 200ms
+const long interval = 5000; // Kirim data setiap 200ms
 
 // ── Pin definitions ────────────────────────────────────────────
 #define ECG_PIN 36
@@ -54,52 +64,7 @@ void setup_wifi() {
   Serial.println("\nWiFi connected");
 }
 
-void reconnect() {
-  // Loop hingga terkoneksi kembali
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Buat ID Client unik (berdasarkan MAC Address)
-    String clientId = "ESP32-Client-";
-    clientId += String(WiFi.macAddress());
-    
-    if (client.connect(clientId.c_str())) {
-      Serial.println("connected");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      delay(5000);
-    }
-  }
-}
-
 bool last_fall_state = false;
-
-void triggerEmergencyLED(bool is_falling) {
-  const char* led_topic = "v1/device/emergency_led";
-  if (is_falling) {
-    client.publish(led_topic, "ON");
-  } else {
-    client.publish(led_topic, "OFF");
-  }
-}
-
-void sendSensorData(float current_bpm, int raw_ecg, bool fall_status) {
-  StaticJsonDocument<256> doc;
-  
-  doc["bpm"] = current_bpm;
-  doc["ecg_raw"] = raw_ecg;
-  
-  // Logika 2 Kondisi: Fall/Safe
-  doc["activity_status"] = fall_status ? "FALL" : "SAFE";
-  
-  // Status Lead Sensor (Kesehatan Sensor)
-  doc["sensor_status"] = "CONNECTED";
-  
-  char buffer[256];
-  serializeJson(doc, buffer);
-  client.publish(mqtt_topic, buffer);
-}
 
 void updateLeadsDebounce(bool raw_p, bool raw_n)
 {
@@ -115,12 +80,13 @@ void updateLeadsDebounce(bool raw_p, bool raw_n)
 // ── BPM detection ──────────────────────────────────────────────
 const int BPM_HISTORY = 8;
 const unsigned long REFRACTORY = 300;
-const float ADAPTIVE_K = 0.75f;
-const float OUTLIER_THR = 0.25f;
+const float ADAPTIVE_K = 0.55f;
+const float OUTLIER_THR = 0.45f;
 
 float peak_max = 30.0f;
 float adapt_thresh = 50.0f;
 unsigned long peak_max_reset_ms = 0;
+float ecg_filtered;
 
 float rr_intervals[BPM_HISTORY];
 int rr_idx = 0;
@@ -134,6 +100,10 @@ bool above_thresh = false;
 struct Biquad {
   float b0, b1, b2, a1, a2;
   float z1 = 0, z2 = 0;
+  
+  Biquad(float b0, float b1, float b2, float a1, float a2)
+    : b0(b0), b1(b1), b2(b2), a1(a1), a2(a2), z1(0), z2(0) {}
+
   float process(float x) {
     float y = b0 * x + z1;
     z1 = b1 * x - a1 * y + z2;
@@ -142,14 +112,16 @@ struct Biquad {
   }
 };
 
-Biquad hpf = {0.8751f, -1.7501f, 0.8751f, -1.7467f, 0.7571f};
+Biquad hpf = {0.9950f, -1.9900f, 0.9950f, -1.9900f, 0.9900f};
 // Low-pass 15 Hz @ 50 Hz sample rate
-Biquad lpf = {0.1763f, 0.3526f, 0.1763f, -0.4360f, 0.1413f};
+Biquad lpf = {0.1367f, 0.2734f, 0.1367f, -0.6952f, 0.2420f};
 
+// Add DC offset removal BEFORE the biquad filters
 float filterECG(int rawValue) {
-  float x = (float)rawValue;
-  x = hpf.process(x);
-  x = lpf.process(x);
+  static float dc = 2048.0f;
+  dc = 0.99f * dc + 0.01f * rawValue;  // slow IIR DC tracker
+  float x = rawValue - dc;             // remove DC first
+  x = lpf.process(x);                  // only use LPF, skip HPF
   return x;
 }
 
@@ -223,7 +195,7 @@ const float scaler_mean[47] = {-0.005458f, 0.130513f, -0.383600f, 0.343179f, 0.7
 const float scaler_std[47] = {0.347560f, 0.182964f, 0.860372f, 0.751155f, 1.232485f, 0.283975f, 0.432986f, 0.333587f, 0.767390f, 1.186798f, 1.603372f, 0.352453f, 0.424153f, 0.189090f, 0.933041f, 0.679870f, 1.185326f, 0.261600f, 1.261780f, 3.650707f, 11.064667f, 9.599742f, 19.253976f, 2.748286f, 1.736150f, 2.660111f, 6.892009f, 6.645374f, 12.261871f, 2.321153f, 1.074681f, 2.380688f, 5.974141f, 6.323863f, 11.247587f, 1.952207f, 0.233045f, 1.224126f, 5.529463f, 1.429443f, 0.120236f, 0.320587f, 6.311061f, 14.174370f, 4.312091f, 2.869851f, 0.298456f};
 
 // ── Tensor arena ───────────────────────────
-constexpr int kTensorArenaSize = 30 * 1024;  // 60KB
+constexpr int kTensorArenaSize = 60 * 1024;  // 60KB
 alignas(16) uint8_t tensor_arena[kTensorArenaSize];
 
 // ── Sliding window buffers ──────────────────────────────────────
@@ -372,13 +344,56 @@ void run_inference() {
     return;
   }
 
-  float fall_prob = getModelOutput(0); // index 1 = fall class
-  bool is_fall = fall_prob < FALL_THRESHOLD;
+  global_fall_prob = getModelOutput(0);
+  global_is_fall = global_fall_prob < FALL_THRESHOLD;
 
   Serial.print("FALL_PROB:");
-  Serial.print(fall_prob, 3);
+  Serial.print(global_fall_prob, 3);
   Serial.print("\tFALL:");
-  Serial.println(is_fall ? 1 : 0);
+  Serial.println(global_is_fall ? 1 : 0);
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP32-";
+    clientId += String(WiFi.macAddress());
+
+    if (client.connect(clientId.c_str())) {  // no username/password
+      Serial.println("connected to Antares");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retry in 5s");
+      delay(5000);
+    }
+  }
+}
+
+void sendSensorData(float fall_prob, bool fall_status, int bpm) {
+  StaticJsonDocument<128> inner;
+  inner["fall_prob"]       = fall_prob;
+  inner["fall_status"]     = fall_status ? "FALL" : "SAFE";
+  inner["bpm"]             = bpm;
+  char con_buf[128];
+  serializeJson(inner, con_buf);
+
+  StaticJsonDocument<512> doc;
+  doc["m2m:rqp"]["op"]  = 1;
+  doc["m2m:rqp"]["to"]  = "/antares-cse/antares-id/PA-IOT/fall-00";
+  doc["m2m:rqp"]["fr"]  = antares_access_key;
+  doc["m2m:rqp"]["rqi"] = String(millis()).c_str();
+  doc["m2m:rqp"]["ty"]  = 4;
+  doc["m2m:rqp"]["pc"]["m2m:cin"]["cnf"] = "message";
+  doc["m2m:rqp"]["pc"]["m2m:cin"]["con"] = con_buf;
+
+  char buffer[512];
+  serializeJson(doc, buffer);
+  client.publish(mqtt_topic, buffer);
+}
+
+void triggerEmergencyLED(bool is_falling) {
+  client.publish(led_topic, is_falling ? "ON" : "OFF");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -407,6 +422,11 @@ void setup() {
   analogSetAttenuation(ADC_11db);
   delay(100);
 
+  snprintf(mqtt_topic, sizeof(mqtt_topic),
+  "/oneM2M/req/%s/antares-cse/json", antares_access_key);
+  snprintf(led_topic, sizeof(led_topic),
+  "/oneM2M/req/%s/%s/emergency_led", antares_access_key, antares_project, antares_device);
+
   Serial.print("LO_N_RAW:"); Serial.println(digitalRead(LEADS_OFF_N));
   Serial.print("LO_P_RAW:"); Serial.println(digitalRead(LEADS_OFF_P));
   Serial.print("ADC Sanity Check:"); Serial.println(analogRead(ECG_PIN));
@@ -424,6 +444,8 @@ void setup() {
 
   Serial.println("ESP32 GY521+AD8232 ready");
   Serial.println("counter\tax\tay\taz\tgx\tgy\tgz\ttemp\tecg\tbpm\tlo_p\tlo_n\tleads_off");
+
+  client.setBufferSize(1024);
 
   setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
@@ -463,7 +485,7 @@ if (!client.connected()) {
   int ecg_raw = 0;
   if (!leads_off) {
     ecg_raw = analogRead(ECG_PIN);
-    float ecg_filtered = filterECG(ecg_raw);
+    ecg_filtered = filterECG(ecg_raw);
     detectPeak(ecg_filtered);
   } else {
     if (lo_p_count >= LO_DEBOUNCE && lo_n_count >= LO_DEBOUNCE) {
@@ -498,7 +520,7 @@ if (!client.connected()) {
     
     // Kirim data hanya jika leads terpasang (lo_p_stable & lo_n_stable FALSE)
     if (!leads_off) {
-      sendSensorData(bpm, ecg_raw, current_fall_state);
+      sendSensorData(global_fall_prob, global_is_fall, bpm);
     } else {
       // Kirim status 'LEADS_OFF' jika sensor tidak menempel di tubuh
       StaticJsonDocument<100> doc;
