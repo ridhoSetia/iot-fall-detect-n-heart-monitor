@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Patient Monitoring Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:          #0a0e1a;
+      --surface:     #111827;
+      --surface2:    #1a2235;
+      --border:      #1f2d45;
+      --accent:      #00d4aa;
+      --accent-dim:  #00d4aa22;
+      --danger:      #ff3b5c;
+      --danger-dim:  #ff3b5c22;
+      --warn:        #ffb800;
+      --warn-dim:    #ffb80022;
+      --info:        #4f9eff;
+      --info-dim:    #4f9eff22;
+      --text:        #e2e8f0;
+      --text-muted:  #64748b;
+      --mono:        'Space Mono', monospace;
+      --sans:        'DM Sans', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
+      pointer-events: none; z-index: 9999;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left h1 { font-family: var(--mono); font-size: 18px; letter-spacing: 0.08em; color: var(--accent); }
+    .header-left p  { font-size: 12px; color: var(--text-muted); margin-top: 4px; font-family: var(--mono); }
+    #conn-badge { display: flex; align-items: center; gap: 8px; font-size: 12px; font-family: var(--mono); color: var(--text-muted); }
+    #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s; }
+    #conn-dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+    /* ── Alert banners ── */
+    .alert-banner {
+      display: none; align-items: center; gap: 14px;
+      border-radius: 10px; padding: 14px 22px; margin-bottom: 12px;
+      font-family: var(--mono); font-size: 13px;
+      animation: banner-pulse 1s linear infinite;
+    }
+    .alert-banner.show { display: flex; }
+    .alert-banner .icon { font-size: 20px; }
+    @keyframes banner-pulse { 50% { opacity: 0.55; } }
+
+    #banner-fall {
+      background: var(--danger-dim); border: 1px solid var(--danger); color: var(--danger);
+    }
+    #banner-buzzer {
+      background: var(--warn-dim); border: 1px solid var(--warn); color: var(--warn);
+      animation: none; /* buzzer banner statis, tidak berkedip */
+    }
+    #banner-posture {
+      background: var(--info-dim); border: 1px solid var(--info); color: var(--info);
+      animation: none;
+    }
+
+    /* ── Indicators (header kanan) ── */
+    .indicators { display: flex; gap: 12px; }
+    .indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: var(--mono); color: var(--text-muted); }
+    .ind-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s, box-shadow 0.3s; }
+    .ind-dot.on-led    { background: #00d4aa; box-shadow: 0 0 8px #00d4aa; }
+    .ind-dot.on-buzzer { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 22px; position: relative; overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--accent); opacity: 0.5; transition: opacity 0.3s;
+    }
+    .card:hover::after { opacity: 1; }
+    .card-label { font-size: 11px; font-family: var(--mono); letter-spacing: 0.12em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px; }
+    .card-value { font-family: var(--mono); font-size: 44px; font-weight: 700; line-height: 1; color: var(--accent); transition: color 0.3s; }
+    .card-unit  { font-family: var(--sans); font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+
+    /* ── Fall card (full width) ── */
+    #fall-card {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; justify-content: space-between; padding: 18px 28px;
+    }
+    #fall-card::after { display: none; }
+    #fall-status-label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 6px; }
+    #fall-status-value { font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: 0.04em; transition: color 0.3s; }
+    .fall-prob-bar-wrap { flex: 1; margin: 0 36px; }
+    .fall-prob-bar-wrap p { font-size: 11px; font-family: var(--mono); color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.08em; }
+    .bar-track { background: var(--surface2); border-radius: 4px; height: 10px; overflow: hidden; }
+    #fall-prob-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--accent); transition: width 0.4s ease, background 0.3s; }
+    #fall-prob-pct  { font-family: var(--mono); font-size: 12px; color: var(--text-muted); margin-top: 5px; text-align: right; }
+
+    /* ── Posture card ── */
+    #posture-icon { font-size: 36px; margin-bottom: 8px; }
+    #posture-value { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); transition: color 0.3s; }
+    #posture-sub   { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    /* ── HRV card ── */
+    #hrv-badge {
+      display: inline-block; font-size: 11px; font-family: var(--mono);
+      padding: 3px 10px; border-radius: 20px; margin-top: 10px;
+      background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent);
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+
+    /* Alert states */
+    .state-safe    { color: var(--accent)    !important; }
+    .state-fall    { color: var(--danger)    !important; }
+    .state-warn    { color: var(--warn)      !important; }
+    .state-offline { color: var(--text-muted) !important; }
+    .state-info    { color: var(--info)      !important; }
+
+    .card.alert-danger { border-color: var(--danger); animation: pulse-border-danger 1s ease infinite; }
+    .card.alert-warn   { border-color: var(--warn);   animation: pulse-border-warn   1s ease infinite; }
+    @keyframes pulse-border-danger { 0%,100% { border-color: var(--danger); } 50% { border-color: transparent; } }
+    @keyframes pulse-border-warn   { 0%,100% { border-color: var(--warn);   } 50% { border-color: transparent; } }
+
+    /* ── ECG chart (full width) ── */
+    #ecg-card { grid-column: 1 / -1; }
+    #ecg-card .card-label { margin-bottom: 16px; }
+    #ecgChart { width: 100% !important; height: 150px !important; }
+
+    /* ── Footer ── */
+    footer { margin-top: 20px; text-align: center; font-size: 11px; font-family: var(--mono); color: var(--text-muted); opacity: 0.5; letter-spacing: 0.06em; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <h1>PATIENT MONITORING SYSTEM</h1>
+      <p>ESP32 · MPU-6050 · AD8232 · MQTT → WebSocket</p>
+    </div>
+    <div style="display:flex; align-items:center; gap:24px;">
+      <div class="indicators">
+        <div class="indicator">
+          <div class="ind-dot" id="led-dot"></div>
+          <span>LED</span>
+        </div>
+        <div class="indicator">
+          <div class="ind-dot" id="buzzer-dot"></div>
+          <span>BUZZER</span>
+        </div>
+      </div>
+      <div id="conn-badge">
+        <div id="conn-dot"></div>
+        <span id="conn-label">CONNECTING...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Alert: Jatuh dikonfirmasi -->
+  <div class="alert-banner" id="banner-fall">
+    <span class="icon">⚠</span>
+    <span id="banner-fall-text">JATUH TERDETEKSI — Pasien mungkin butuh bantuan segera!</span>
+  </div>
+
+  <!-- Alert: Buzzer menyala (kondisi jantung) -->
+  <div class="alert-banner" id="banner-buzzer">
+    <span class="icon">🔔</span>
+    <span id="banner-buzzer-text">BUZZER: kondisi jantung abnormal terdeteksi</span>
+  </div>
+
+  <!-- Info: Postur tidak normal saat jatuh -->
+  <div class="alert-banner" id="banner-posture">
+    <span class="icon">🛏</span>
+    <span id="banner-posture-text">Pasien terdeteksi dalam posisi BERBARING setelah jatuh</span>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid">
+
+    <!-- Fall Status (full width) -->
+    <div class="card" id="fall-card">
+      <div>
+        <div id="fall-status-label" class="card-label">FALL STATUS</div>
+        <div id="fall-status-value" class="state-offline">WAITING...</div>
+      </div>
+      <div class="fall-prob-bar-wrap">
+        <p>FALL PROBABILITY (MODEL RAW)</p>
+        <div class="bar-track"><div id="fall-prob-fill"></div></div>
+        <div id="fall-prob-pct">0.000</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="card-label">THRESHOLD</div>
+        <div style="font-family:var(--mono); font-size:20px; color:var(--warn);">≥ 0.50</div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--text-muted); margin-top:4px;">konfirmasi 3/5 window</div>
+      </div>
+    </div>
+
+    <!-- Heart Rate -->
+    <div class="card" id="bpm-card">
+      <div class="card-label">HEART RATE</div>
+      <div class="card-value" id="bpm-value">--</div>
+      <div class="card-unit">BPM · Normal: 60–120</div>
+    </div>
+
+    <!-- HRV -->
+    <div class="card" id="hrv-card">
+      <div class="card-label">HRV — RMSSD</div>
+      <div class="card-value" id="hrv-value" style="font-size:38px;">--</div>
+      <div class="card-unit">ms · Anomali: &gt; 80 ms</div>
+      <div id="hrv-badge">NORMAL</div>
+    </div>
+
+    <!-- Posture -->
+    <div class="card" id="posture-card">
+      <div class="card-label">POSISI TUBUH</div>
+      <div id="posture-icon">❓</div>
+      <div id="posture-value">UNKNOWN</div>
+      <div id="posture-sub">Menunggu data sensor...</div>
+    </div>
+
+    <!-- ECG Raw -->
+    <div class="card">
+      <div class="card-label">ECG RAW (LATEST)</div>
+      <div class="card-value" id="ecg-value" style="font-size:34px;">--</div>
+      <div class="card-unit">ADC 12-bit (0–4095)</div>
+    </div>
+
+    <!-- Sensor status -->
+    <div class="card" id="leads-card">
+      <div class="card-label">SENSOR STATUS</div>
+      <div class="card-value" id="leads-value" style="font-size:26px; margin-top:8px;">--</div>
+      <div class="card-unit" id="leads-sub">Menunggu data...</div>
+    </div>
+
+    <!-- ECG Chart (full width) -->
+    <div class="card" id="ecg-card">
+      <div class="card-label">ECG WAVEFORM (REAL-TIME)</div>
+      <canvas id="ecgChart"></canvas>
+    </div>
+
+  </div>
+
+  <footer>SISTEM MONITORING JATUH &amp; DETAK JANTUNG · KEL-1 · 2025</footer>
+
+  <script>
+    // ── Chart.js ECG ─────────────────────────────────────────────
+    const ctx = document.getElementById('ecgChart').getContext('2d')
+    const ecgChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'ECG', data: [],
+        borderColor: '#00d4aa', borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+        fill: { target: 'origin', above: 'rgba(0,212,170,0.05)' }
+      }]},
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { display: false },
+          y: { grid: { color: '#1f2d45' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } }
+        }
+      }
+    })
+    const MAX_ECG_POINTS = 120
+
+    // ── WebSocket ─────────────────────────────────────────────────
+    const ws = new WebSocket(`ws://${window.location.host}/ws`)
+    ws.onopen  = () => { document.getElementById('conn-dot').classList.add('live'); document.getElementById('conn-label').innerText = 'LIVE' }
+    ws.onclose = () => { document.getElementById('conn-dot').classList.remove('live'); document.getElementById('conn-label').innerText = 'DISCONNECTED' }
+    ws.onerror = ()  => { document.getElementById('conn-label').innerText = 'ERROR' }
+    ws.onmessage = (e) => updateDashboard(JSON.parse(e.data))
+
+    // ── Helpers ───────────────────────────────────────────────────
+    function parseBuzzerReason(raw) {
+      if (!raw || raw === 'NONE') return null
+      if (raw.startsWith('BPM_LOW'))  return `BPM rendah (${raw.split(':')[1]} bpm) — kemungkinan bradikardia`
+      if (raw.startsWith('BPM_HIGH')) return `BPM tinggi (${raw.split(':')[1]} bpm) — kemungkinan takikardia`
+      if (raw.startsWith('HRV'))      return `Irama jantung tidak teratur (RMSSD ${raw.split(':')[1]} ms)`
+      return raw
+    }
+
+    const POSTURE_META = {
+      STANDING: { icon: '🧍', label: 'BERDIRI',  sub: 'Posisi tegak normal',         color: 'var(--accent)' },
+      SITTING:  { icon: '🪑', label: 'DUDUK',    sub: 'Posisi duduk terdeteksi',      color: 'var(--accent)' },
+      LYING:    { icon: '🛏', label: 'BERBARING', sub: 'Pasien dalam posisi rebah',    color: 'var(--warn)'   },
+      UNKNOWN:  { icon: '❓', label: 'UNKNOWN',   sub: 'Sensor bergerak / kalibrasi', color: 'var(--text-muted)' },
+    }
+
+    // ── Main dashboard update ─────────────────────────────────────
+    function updateDashboard(data) {
+      const fallStatus   = data.fallStatus   || 'Waiting...'
+      const bpm          = data.bpm          ?? 0
+      const fallProb     = data.fallProb     ?? 0.0
+      const ledStatus    = data.ledStatus    || 'OFF'
+      const buzzerStatus = data.buzzerStatus || 'OFF'
+      const buzzerReason = data.buzzerReason || 'NONE'
+      const hrv          = data.hrv          ?? 0.0
+      const posture      = data.posture      || 'UNKNOWN'
+      const isDisconn    = fallStatus === 'DISCONNECTED'
+      const isFall       = fallStatus === 'FALL'
+
+      // ── Fall status & probability bar ─────────────────────────
+      const statusEl = document.getElementById('fall-status-value')
+      const fillEl   = document.getElementById('fall-prob-fill')
+      const pctEl    = document.getElementById('fall-prob-pct')
+      const fallCard = document.getElementById('fall-card')
+      const bpmCard  = document.getElementById('bpm-card')
+
+      const probPct = (fallProb * 100).toFixed(1)
+      fillEl.style.width = probPct + '%'
+      pctEl.innerText = fallProb.toFixed(3)
+      fillEl.style.background = fallProb >= 0.50 ? 'var(--danger)' : fallProb >= 0.35 ? 'var(--warn)' : 'var(--accent)'
+
+      statusEl.className = ''
+      fallCard.classList.remove('alert-danger', 'alert-warn')
+      bpmCard.classList.remove('alert-danger', 'alert-warn')
+
+      if (isFall) {
+        statusEl.innerText = '⚠  JATUH DIKONFIRMASI'
+        statusEl.classList.add('state-fall')
+        fallCard.classList.add('alert-danger')
+      } else if (fallStatus === 'SAFE') {
+        statusEl.innerText = '✓  AMAN'
+        statusEl.classList.add('state-safe')
+      } else if (isDisconn) {
+        statusEl.innerText = '—  SENSOR TERLEPAS'
+        statusEl.classList.add('state-warn')
+      } else {
+        statusEl.innerText = fallStatus
+        statusEl.classList.add('state-offline')
+      }
+
+      // ── Banner: jatuh ─────────────────────────────────────────
+      document.getElementById('banner-fall').classList.toggle('show', isFall)
+
+      // ── Banner: buzzer ────────────────────────────────────────
+      const buzzerActive = buzzerStatus === 'ON'
+      const buzzerDesc   = parseBuzzerReason(buzzerReason)
+      const bannerBuzzer = document.getElementById('banner-buzzer')
+      bannerBuzzer.classList.toggle('show', buzzerActive && !!buzzerDesc)
+      if (buzzerDesc) document.getElementById('banner-buzzer-text').innerText = '🔔 BUZZER: ' + buzzerDesc
+
+      // ── Banner: postur (saat jatuh dan baring) ────────────────
+      const showPostureBanner = isFall && posture === 'LYING'
+      document.getElementById('banner-posture').classList.toggle('show', showPostureBanner)
+
+      // ── BPM ──────────────────────────────────────────────────
+      const bpmEl = document.getElementById('bpm-value')
+      if (isDisconn || bpm === 0) {
+        bpmEl.innerText = '--'
+        bpmEl.style.color = 'var(--text-muted)'
+        bpmCard.classList.remove('alert-danger', 'alert-warn')
+      } else {
+        bpmEl.innerText = bpm.toFixed(1)
+        if (bpm < 40 || bpm > 140) {
+          bpmEl.style.color = 'var(--danger)'
+          if (isFall) bpmCard.classList.add('alert-danger')
+        } else if (bpm < 60 || bpm > 120) {
+          bpmEl.style.color = 'var(--warn)'
+          if (isFall) bpmCard.classList.add('alert-warn')
+        } else {
+          bpmEl.style.color = 'var(--accent)'
+        }
+      }
+
+      // ── HRV ──────────────────────────────────────────────────
+      const hrvEl    = document.getElementById('hrv-value')
+      const hrvBadge = document.getElementById('hrv-badge')
+      const hrvCard  = document.getElementById('hrv-card')
+      if (isDisconn || hrv === 0) {
+        hrvEl.innerText = '--'
+        hrvEl.style.color = 'var(--text-muted)'
+        hrvBadge.innerText = 'NO DATA'
+        hrvBadge.style.cssText = 'background:var(--surface2);color:var(--text-muted);border-color:var(--border)'
+        hrvCard.classList.remove('alert-warn')
+      } else {
+        hrvEl.innerText = hrv.toFixed(1)
+        if (hrv > 80) {
+          hrvEl.style.color = 'var(--warn)'
+          hrvBadge.innerText = 'ANOMALI'
+          hrvBadge.style.cssText = 'background:var(--warn-dim);color:var(--warn);border-color:var(--warn)'
+          if (isFall) hrvCard.classList.add('alert-warn')
+        } else {
+          hrvEl.style.color = 'var(--accent)'
+          hrvBadge.innerText = 'NORMAL'
+          hrvBadge.style.cssText = 'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)'
+          hrvCard.classList.remove('alert-warn')
+        }
+      }
+
+      // ── Posture ───────────────────────────────────────────────
+      const meta = POSTURE_META[posture] || POSTURE_META.UNKNOWN
+      document.getElementById('posture-icon').innerText  = meta.icon
+      document.getElementById('posture-value').innerText = meta.label
+      document.getElementById('posture-value').style.color = meta.color
+      document.getElementById('posture-sub').innerText   = meta.sub
+
+      // ── Sensor / Leads ────────────────────────────────────────
+      const leadsEl    = document.getElementById('leads-value')
+      const leadsSubEl = document.getElementById('leads-sub')
+      if (isDisconn) {
+        leadsEl.innerText = 'TERLEPAS'; leadsEl.style.color = 'var(--warn)'
+        leadsSubEl.innerText = 'Pasang kembali elektroda ECG'
+      } else if (fallStatus === 'Waiting...') {
+        leadsEl.innerText = 'STANDBY'; leadsEl.style.color = 'var(--text-muted)'
+        leadsSubEl.innerText = 'Menunggu data dari ESP32...'
+      } else {
+        leadsEl.innerText = 'TERPASANG'; leadsEl.style.color = 'var(--accent)'
+        leadsSubEl.innerText = 'Elektroda ECG OK'
+      }
+
+      // ── LED & Buzzer indicator dots ───────────────────────────
+      const ledDot    = document.getElementById('led-dot')
+      const buzzerDot = document.getElementById('buzzer-dot')
+      ledStatus    === 'ON' ? ledDot.classList.add('on-led')       : ledDot.classList.remove('on-led')
+      buzzerStatus === 'ON' ? buzzerDot.classList.add('on-buzzer') : buzzerDot.classList.remove('on-buzzer')
+
+      // ── ECG raw + chart ───────────────────────────────────────
+      if (data.ecg_raw !== undefined && data.ecg_raw !== null && !isDisconn) {
+        document.getElementById('ecg-value').innerText = data.ecg_raw
+        if (ecgChart.data.labels.length >= MAX_ECG_POINTS) {
+          ecgChart.data.labels.shift()
+          ecgChart.data.datasets[0].data.shift()
+        }
+        ecgChart.data.labels.push('')
+        ecgChart.data.datasets[0].data.push(data.ecg_raw)
+        ecgChart.update()
+      }
+    }
+  </script>
+</body>
+</html>

@@ -17,8 +17,8 @@ float global_fall_prob = 0.0f;
 bool global_is_fall = false;
 
 // -- Konfigurasi WiFi & MQTT --
-const char* ssid = "Beli kuota aja sudah erna";
-const char* password = "turuntangan";
+const char* ssid = "Ridho Ruijie";
+const char* password = "ridhosetiawanskom24";
 
 const char* mqtt_server = "mqtt.antares.id";
 const int mqtt_port = 1883;
