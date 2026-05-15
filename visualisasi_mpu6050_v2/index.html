@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GY521 + AD8232 Body Monitor</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* ── DARK THEME PALETTE ── */
+  --bg:          #0f172a;        /* Slate-900 */
+  --bg-card:     #1e293b;        /* Slate-800 */
+  --bg-sidebar:  #1e293b;        /* Slate-800 */
+  --bg-hover:    #334155;        /* Slate-700 */
+  --border:      #334155;        /* Slate-700 */
+  --border-soft: #475569;        /* Slate-600 */
+  --text:        #f1f5f9;        /* Slate-100 */
+  --text-muted:  #94a3b8;        /* Slate-400 */
+  --text-light:  #64748b;        /* Slate-500 */
+  
+  /* Accent colors (adjusted for dark bg) */
+  --primary:     #38bdf8;        /* Sky-400 */
+  --primary-dark:#0ea5e9;        /* Sky-500 */
+  --secondary:   #2dd4bf;        /* Teal-400 */
+  --success:     #4ade80;        /* Green-400 */
+  --warning:     #fbbf24;        /* Amber-400 */
+  --danger:      #f87171;        /* Red-400 */
+  --danger-soft: #7f1d1d;        /* Red-900 */
+  
+  /* Shadows (subtler for dark mode) */
+  --shadow-sm:   0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow:      0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-md:   0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg:   0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  
+  /* Spacing - KEPT SAME */
+  --space-xs:    4px;
+  --space-sm:    8px;
+  --space-md:    12px;
+  --space-lg:    16px;
+  --space-xl:    24px;
+  --space-2xl:   32px;
+  
+  /* Border radius - KEPT SAME */
+  --radius-sm:   6px;
+  --radius:      12px;
+  --radius-lg:   16px;
+  
+  /* Transitions - KEPT SAME */
+  --transition:  all 0.2s ease;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* ── HEADER ── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-xl);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
+}
+
+.logo { 
+  font-size: 14px; 
+  font-weight: 700; 
+  letter-spacing: 0.02em; 
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.logo::before {
+  content: "❤️";
+  font-size: 16px;
+}
+.logo span { 
+  color: var(--text); 
+  font-weight: 600;
+}
+
+/* Connection Status Badge - Top Right */
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+.status-badge.connected {
+  background: rgba(74, 222, 128, 0.15);
+  border-color: rgba(74, 222, 128, 0.4);
+  color: var(--success);
+}
+.status-badge.disconnected {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--danger);
+}
+.status-dot {
+  width: 10px; 
+  height: 10px; 
+  border-radius: 50%; 
+  background: var(--text-light);
+  transition: var(--transition);
+  position: relative;
+}
+.status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.3;
+  animation: pulse 2s infinite;
+}
+.status-dot.connected { 
+  background: var(--success); 
+}
+.status-dot.connected::after {
+  background: var(--success);
+}
+.status-dot.disconnected { 
+  background: var(--danger); 
+}
+.status-dot.disconnected::after {
+  background: var(--danger);
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Connection Controls */
+.ws-row { 
+  display: flex; 
+  gap: var(--space-sm); 
+  align-items: center; 
+  flex-wrap: wrap;
+}
+#ws-url {
+  background: var(--bg-card); 
+  border: 1px solid var(--border);
+  color: var(--text); 
+  font-size: 13px; 
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm); 
+  width: 220px;
+  transition: var(--transition);
+}
+#ws-url:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+/* Primary Connect Button */
+.btn {
+  font-size: 13px; 
+  font-weight: 500;
+  padding: var(--space-sm) var(--space-lg); 
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border); 
+  background: var(--bg-card);
+  color: var(--text); 
+  cursor: pointer; 
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 100px;
+  justify-content: center;
+}
+.btn:hover { 
+  background: var(--bg-hover); 
+  border-color: var(--border-soft);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.btn:active {
+  transform: translateY(0);
+}
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0f172a;
+  font-weight: 600;
+}
+.btn.primary:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.35);
+}
+.btn.danger { 
+  border-color: var(--danger); 
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.1);
+}
+.btn.danger:hover {
+  background: rgba(248, 113, 113, 0.2);
+}
+
+/* Loading Spinner */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.25);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: none;
+}
+.spinner.show {
+  display: inline-block;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── LAYOUT ── KEPT IDENTICAL ── */
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  grid-template-rows: 1fr 220px;
+  gap: var(--space-xl);
+  padding: var(--space-xl);
+  overflow: hidden;
+}
+
+/* ── 3D CANVAS ── */
+#canvas-wrap { 
+  position: relative; 
+  grid-row: 1; 
+  grid-column: 1;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+#canvas-wrap canvas { 
+  display: block; 
+  width: 100% !important; 
+  height: 100% !important; 
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* ── HUD overlaid on canvas ── */
+.hud {
+  position: absolute; 
+  bottom: var(--space-lg); 
+  left: var(--space-lg);
+  display: grid; 
+  grid-template-columns: repeat(3, 1fr); 
+  gap: var(--space-sm);
+  pointer-events: none;
+  max-width: 320px;
+}
+.hud-card {
+  background: rgba(30, 41, 59, 0.92);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md) var(--space-lg);
+  min-width: 90px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(4px);
+}
+.hud-label { 
+  font-size: 10px; 
+  color: var(--text-muted); 
+  text-transform: uppercase; 
+  letter-spacing: 0.08em; 
+  margin-bottom: var(--space-xs);
+  font-weight: 600;
+}
+.hud-val { 
+  font-size: 18px; 
+  font-weight: 700; 
+  font-variant-numeric: tabular-nums; 
+  color: var(--text);
+}
+.hud-unit { 
+  font-size: 10px; 
+  color: var(--text-muted); 
+  margin-left: 2px; 
+  font-weight: 400;
+}
+
+/* BPM badge top-right of canvas */
+.bpm-badge {
+  position: absolute; 
+  top: var(--space-lg); 
+  right: var(--space-lg);
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); 
+  padding: var(--space-md) var(--space-xl);
+  display: flex; 
+  align-items: center; 
+  gap: var(--space-lg);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-md);
+  min-width: 140px;
+}
+.heart-icon { 
+  font-size: 22px; 
+  line-height: 1; 
+  animation: heartbeat 1s infinite;
+  display: inline-flex;
+  align-items: center;
+}
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.25); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.15); }
+}
+.bpm-num { 
+  font-size: 28px; 
+  font-weight: 800; 
+  font-variant-numeric: tabular-nums; 
+  color: var(--danger);
+  line-height: 1;
+}
+.bpm-label { 
+  font-size: 11px; 
+  color: var(--text-muted); 
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* Leads-off warning */
+.leads-warn {
+  position: absolute; 
+  top: var(--space-lg); 
+  left: 50%; 
+  transform: translateX(-50%);
+  background: rgba(251, 191, 36, 0.15); 
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: var(--radius); 
+  padding: var(--space-sm) var(--space-lg); 
+  font-size: 12px; 
+  color: #fcd34d;
+  display: none;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  max-width: 400px;
+  text-align: center;
+}
+.leads-warn.show {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── ECG PANEL (bottom strip) ── */
+#ecg-panel {
+  grid-row: 2; 
+  grid-column: 1;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+#ecg-canvas { 
+  display: block; 
+  width: 100% !important; 
+  height: 100% !important; 
+  background: #0f172a;
+}
+.ecg-label {
+  position: absolute; 
+  top: var(--space-md); 
+  left: var(--space-lg);
+  font-size: 11px; 
+  color: var(--secondary); 
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: rgba(45, 212, 191, 0.15);
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+.ecg-speed {
+  position: absolute; 
+  top: var(--space-md); 
+  right: var(--space-lg);
+  font-size: 11px; 
+  color: var(--text-muted);
+  font-weight: 500;
+  background: var(--bg-hover);
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+
+/* ── SIDEBAR ── */
+aside {
+  grid-row: 1 / 3; 
+  grid-column: 2;
+  background: var(--bg-sidebar);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: var(--space-xl);
+  overflow-y: auto;
+  display: flex; 
+  flex-direction: column; 
+  gap: var(--space-xl);
+}
+
+.panel-title {
+  font-size: 11px; 
+  text-transform: uppercase;
+  letter-spacing: 0.12em; 
+  color: var(--text-muted); 
+  margin-bottom: var(--space-md);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.panel-title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+/* Data Cards */
+.data-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+.data-card:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--border-soft);
+}
+
+/* Gauges */
+.gauge-row { 
+  display: flex; 
+  flex-direction: column; 
+  gap: var(--space-md); 
+}
+.gauge { 
+  display: flex; 
+  flex-direction: column; 
+  gap: var(--space-xs); 
+}
+.gauge-header { 
+  display: flex; 
+  justify-content: space-between; 
+  font-size: 12px;
+  font-weight: 500;
+}
+.gauge-name { 
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.gauge-num { 
+  font-variant-numeric: tabular-nums; 
+  color: var(--text); 
+  font-weight: 600;
+}
+.gauge-bar { 
+  height: 6px; 
+  background: var(--bg-hover); 
+  border-radius: 3px; 
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.gauge-fill { 
+  height: 100%; 
+  border-radius: 3px; 
+  width: 50%; 
+  transition: width 0.15s ease; 
+}
+.fill-blue   { background: linear-gradient(90deg, var(--primary), var(--primary-dark)); }
+.fill-purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
+.fill-red    { background: linear-gradient(90deg, var(--danger), #ef4444); }
+.fill-green  { background: linear-gradient(90deg, var(--success), #22c55e); }
+
+/* Mode buttons */
+.mode-btns { 
+  display: flex; 
+  gap: var(--space-xs); 
+  flex-wrap: wrap; 
+}
+.mode-btn {
+  font-size: 12px; 
+  padding: var(--space-xs) var(--space-md); 
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border); 
+  background: var(--bg-card);
+  color: var(--text-muted); 
+  cursor: pointer; 
+  transition: var(--transition);
+  font-weight: 500;
+}
+.mode-btn:hover { 
+  color: var(--text); 
+  background: var(--bg-hover);
+  border-color: var(--border-soft);
+}
+.mode-btn.active { 
+  background: var(--primary); 
+  border-color: var(--primary); 
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(56, 189, 248, 0.3);
+}
+
+/* Serial log */
+.serial-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--secondary);
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: var(--radius-sm); 
+  padding: var(--space-md);
+  height: 120px; 
+  overflow-y: auto; 
+  line-height: 1.8;
+  white-space: pre;
+}
+
+/* Info box */
+.info-box {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--radius); 
+  padding: var(--space-lg);
+  font-size: 12px; 
+  color: var(--text); 
+  line-height: 1.7;
+}
+.info-box b { 
+  color: var(--primary); 
+  font-weight: 600;
+}
+.info-box ol {
+  padding-left: var(--space-lg);
+  margin-top: var(--space-xs);
+}
+.info-box li {
+  margin-bottom: var(--space-xs);
+}
+
+/* Leads-off badge */
+.lo-badge { 
+  font-size: 11px; 
+  padding: 2px 10px; 
+  border-radius: 20px; 
+  font-weight: 600; 
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lo-ok { 
+  background: rgba(74, 222, 128, 0.2); 
+  border: 1px solid rgba(74, 222, 128, 0.4); 
+  color: var(--success); 
+}
+.lo-off { 
+  background: rgba(248, 113, 113, 0.2); 
+  border: 1px solid rgba(248, 113, 113, 0.4); 
+  color: var(--danger); 
+  animation: lo-blink 1s infinite; 
+}
+@keyframes lo-blink { 
+  0%, 100% { opacity: 1; } 
+  50% { opacity: 0.7; } 
+}
+
+/* ── FALL DETECTION PANEL ── */
+.fall-panel {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: var(--transition);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+}
+.fall-panel.fall-active {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2), var(--shadow-lg);
+}
+.fall-panel.fall-safe {
+  border-color: var(--success);
+}
+.fall-header {
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+}
+.fall-verdict {
+  font-size: 12px; 
+  font-weight: 800; 
+  letter-spacing: 0.08em;
+  text-transform: uppercase; 
+  transition: var(--transition);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+}
+.fall-verdict.v-fall { 
+  color: var(--danger); 
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+.fall-verdict.v-safe { 
+  color: var(--success); 
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.fall-verdict.v-waiting { 
+  color: var(--text-muted); 
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.fall-body { 
+  padding: var(--space-lg); 
+  display: flex; 
+  flex-direction: column; 
+  gap: var(--space-md); 
+}
+.fall-prob-row {
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+}
+.fall-prob-label { 
+  color: var(--text-muted); 
+}
+.fall-prob-num {
+  font-size: 24px; 
+  font-weight: 800; 
+  font-variant-numeric: tabular-nums;
+  transition: var(--transition);
+  line-height: 1;
+}
+.fall-prob-num.high { 
+  color: var(--danger); 
+}
+.fall-prob-num.low { 
+  color: var(--success); 
+}
+.fall-prob-num.none { 
+  color: var(--text-muted); 
+}
+.fall-bar-wrap {
+  height: 8px; 
+  background: var(--bg-hover);
+  border-radius: 4px; 
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.fall-bar-fill {
+  height: 100%; 
+  border-radius: 4px;
+  width: 0%; 
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.fall-flash {
+  position: absolute; 
+  inset: 0; 
+  pointer-events: none;
+  background: rgba(248, 113, 113, 0.12);
+  opacity: 0; 
+  border-radius: var(--radius-lg);
+  transition: opacity 0.15s ease;
+  z-index: 5;
+}
+.fall-flash.show { 
+  opacity: 1; 
+  animation: flashPulse 0.4s ease;
+}
+@keyframes flashPulse {
+  0% { opacity: 0; }
+  20% { opacity: 0.2; }
+  100% { opacity: 0; }
+}
+.fall-history {
+  display: flex; 
+  gap: 2px; 
+  align-items: center;
+  padding-top: var(--space-xs);
+}
+.fall-tick {
+  width: 5px; 
+  height: 18px; 
+  border-radius: 2px;
+  background: var(--border-soft); 
+  flex-shrink: 0;
+  transition: var(--transition);
+}
+.fall-tick.t-fall { 
+  background: var(--danger); 
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.3);
+}
+.fall-tick.t-safe { 
+  background: var(--success); 
+  opacity: 0.75; 
+}
+
+/* Wiring Table */
+.wire-table { 
+  width: 100%; 
+  border-collapse: collapse; 
+  font-size: 12px; 
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.wire-table th { 
+  color: var(--text-muted); 
+  font-weight: 600; 
+  text-align: left; 
+  padding: var(--space-sm) var(--space-md); 
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-hover);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wire-table td { 
+  padding: var(--space-sm) var(--space-md); 
+  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+}
+.wire-table tr:last-child td {
+  border-bottom: none;
+}
+.wire-table tr:nth-child(even) {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+/* Heart Rate Section */
+.hr-display {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  background: rgba(248, 113, 113, 0.12);
+  border-radius: var(--radius);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+.bpm-large {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  min-width: 70px;
+  text-align: center;
+}
+.hr-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.hr-status span {
+  display: block;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.status-normal { color: var(--success); }
+.status-warning { color: var(--warning); }
+.status-alert { color: var(--danger); }
+
+/* Responsive adjustments - KEPT SAME */
+@media (max-width: 1200px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 220px auto;
+    padding: var(--space-lg);
+  }
+  #canvas-wrap { grid-row: 1; grid-column: 1; }
+  #ecg-panel { grid-row: 2; grid-column: 1; }
+  aside { grid-row: 3; grid-column: 1; }
+  .hud { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  header {
+    padding: var(--space-md);
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ws-row {
+    width: 100%;
+    justify-content: center;
+  }
+  #ws-url {
+    width: 100%;
+    max-width: 300px;
+  }
+  main {
+    padding: var(--space-md);
+    gap: var(--space-lg);
+  }
+  .hud {
+    grid-template-columns: repeat(2, 1fr);
+    bottom: var(--space-md);
+    left: var(--space-md);
+  }
+  .bpm-badge {
+    top: var(--space-md);
+    right: var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    gap: var(--space-md);
+  }
+  .bpm-num { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">GY521 + AD8232 <span>Body Monitor</span></div>
+  
+  <!-- Connection Status Badge - Top Right -->
+  <div class="status-badge disconnected" id="status-badge">
+    <div class="status-dot disconnected" id="status-dot"></div>
+    <span id="status-text">Disconnected</span>
+  </div>
+  
+  <div class="ws-row">
+    <input id="ws-url" value="ws://localhost:8765" type="text" placeholder="ws://localhost:8765"/>
+    <button class="btn primary" id="conn-btn" onclick="toggleConn()">
+      <span class="spinner" id="conn-spinner"></span>
+      <span id="conn-text">Connect</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- 3D canvas -->
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <div class="fall-flash" id="fall-flash"></div>
+
+    <!-- BPM badge -->
+    <div class="bpm-badge">
+      <div class="heart-icon" id="heart-icon">❤️</div>
+      <div>
+        <div class="bpm-num" id="bpm-num">--</div>
+        <div class="bpm-label">BPM<br>Heart Rate</div>
+      </div>
+    </div>
+
+    <!-- Leads off warning -->
+    <div class="leads-warn" id="leads-warn">
+      <span id="leads-warn-text">⚠️ Electrode disconnected</span>
+    </div>
+
+    <!-- HUD -->
+    <div class="hud">
+      <div class="hud-card">
+        <div class="hud-label">Roll</div>
+        <div class="hud-val" id="h-roll">0.0<span class="hud-unit">°</span></div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-label">Pitch</div>
+        <div class="hud-val" id="h-pitch">0.0<span class="hud-unit">°</span></div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-label">Yaw Rate</div>
+        <div class="hud-val" id="h-yaw">0.0<span class="hud-unit">°/s</span></div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-label">Acceleration</div>
+        <div class="hud-val" id="h-mag">1.00<span class="hud-unit">g</span></div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-label">Temperature</div>
+        <div class="hud-val" id="h-temp">--<span class="hud-unit">°C</span></div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-label">Frame</div>
+        <div class="hud-val" id="h-counter">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ECG strip -->
+  <div id="ecg-panel">
+    <canvas id="ecg-canvas"></canvas>
+    <div class="ecg-label">ECG — AD8232</div>
+    <div class="ecg-speed" id="ecg-speed">100 Hz</div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside>
+
+    <!-- ── FALL DETECTION ── -->
+    <div class="fall-panel fall-safe" id="fall-panel">
+      <div class="fall-header">
+        <div class="panel-title">🤖 Fall Detection</div>
+        <div class="fall-verdict v-waiting" id="fall-verdict">WAITING</div>
+      </div>
+      <div class="fall-body">
+        <div class="fall-prob-row">
+          <span class="fall-prob-label">Fall probability</span>
+          <span class="fall-prob-num none" id="fall-prob-num">--%</span>
+        </div>
+        <div class="fall-bar-wrap">
+          <div class="fall-bar-fill" id="fall-bar" style="background:var(--success)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:10px;color:var(--text-muted);font-weight:500">History (last 20)</span>
+          <span style="font-size:10px;color:var(--text-muted);font-weight:500">Threshold: 35%</span>
+        </div>
+        <div class="fall-history" id="fall-history">
+          <!-- ticks injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Heart Rate Card -->
+    <div class="data-card">
+      <div class="panel-title">❤️ Heart Rate</div>
+      <div class="hr-display">
+        <div class="bpm-large" id="s-bpm">--</div>
+        <div class="hr-status">
+          Current Status
+          <span id="s-hr-status" class="status-normal">Normal</span>
+        </div>
+      </div>
+      
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text-muted);font-weight:500">LO+ (GPIO 32)</span>
+          <span id="lo-p-badge" class="lo-badge lo-ok">✓ Connected</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text-muted);font-weight:500">LO− (GPIO 35)</span>
+          <span id="lo-n-badge" class="lo-badge lo-ok">✓ Connected</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text-muted);font-weight:500">ECG Signal</span>
+          <span id="lo-overall-badge" class="lo-badge lo-ok">● Ready</span>
+        </div>
+      </div>
+      
+      <div class="gauge">
+        <div class="gauge-header">
+          <span class="gauge-name">ECG raw (12-bit)</span>
+          <span class="gauge-num" id="g-ecg">0</span>
+        </div>
+        <div class="gauge-bar">
+          <div class="gauge-fill fill-red" id="b-ecg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accelerometer Card -->
+    <div class="data-card">
+      <div class="panel-title">📊 Accelerometer (SMA)</div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">ax</span>
+            <span class="gauge-num" id="g-ax">0.000 g</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-blue" id="b-ax"></div>
+          </div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">ay</span>
+            <span class="gauge-num" id="g-ay">0.000 g</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-blue" id="b-ay"></div>
+          </div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">az</span>
+            <span class="gauge-num" id="g-az">1.000 g</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-blue" id="b-az"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gyroscope Card -->
+    <div class="data-card">
+      <div class="panel-title">🌀 Gyroscope</div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">gx</span>
+            <span class="gauge-num" id="g-gx">0.00 °/s</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-purple" id="b-gx"></div>
+          </div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">gy</span>
+            <span class="gauge-num" id="g-gy">0.00 °/s</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-purple" id="b-gy"></div>
+          </div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">gz</span>
+            <span class="gauge-num" id="g-gz">0.00 °/s</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill fill-purple" id="b-gz"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode Selection -->
+    <div class="data-card">
+      <div class="panel-title">🔄 Rotation Mode</div>
+      <div class="mode-btns">
+        <button class="mode-btn active" onclick="setMode('accel',this)">Accel</button>
+        <button class="mode-btn" onclick="setMode('gyro',this)">Gyro</button>
+        <button class="mode-btn" onclick="setMode('fused',this)">Fused</button>
+      </div>
+    </div>
+
+    <!-- Serial Log -->
+    <div class="data-card">
+      <div class="panel-title">📋 Serial Log</div>
+      <div class="serial-box" id="serial"></div>
+    </div>
+
+    <!-- Wiring Guide -->
+    <div class="data-card">
+      <div class="panel-title">🔌 AD8232 Wiring</div>
+      <table class="wire-table">
+        <tr><th>AD8232 Pin</th><th>Arduino Pin</th></tr>
+        <tr><td>3.3V</td><td>3.3V</td></tr>
+        <tr><td>GND</td><td>GND</td></tr>
+        <tr><td>OUTPUT</td><td>A0</td></tr>
+        <tr><td>LO+</td><td>D10</td></tr>
+        <tr><td>LO-</td><td>D11</td></tr>
+        <tr><td>SDN</td><td>(optional)</td></tr>
+      </table>
+    </div>
+
+    <!-- Info Box -->
+    <div class="info-box">
+      <b>Quick Start Guide:</b>
+      <ol>
+        <li>Upload <b>gy521_ad8232.ino</b> to your Arduino</li>
+        <li>Run <b>gy521_server.py</b> on your computer</li>
+        <li>Click <b>Connect</b> and move the sensor</li>
+        <li>Attach ECG electrodes to chest for heart monitoring</li>
+      </ol>
+    </div>
+  </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════
+//  THREE.JS — Human body model
+// ════════════════════════════════════════════════════════════
+const DEG = Math.PI / 180;
+const canvas3d = document.getElementById('c');
+const wrap = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x0f172a, 1); // Dark theme background
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+camera.position.set(0, 0.5, 4.5);
+camera.lookAt(0, 0.5, 0);
+
+// Lighting for dark theme - adjusted intensities
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(5, 8, 6); scene.add(sun);
+const fill = new THREE.DirectionalLight(0x64748b, 0.5); // Slate-500 for fill
+fill.position.set(-4, -2, -4); scene.add(fill);
+
+// Grid floor - dark theme colors
+const grid = new THREE.GridHelper(16, 20, 0x334155, 0x1e293b); // Slate-700, Slate-800
+scene.add(grid);
+
+// ── Body parts ──
+const body = new THREE.Group();
+
+function mat(hex, m=0.05, r=0.8) {
+  return new THREE.MeshStandardMaterial({ color: hex, metalness: m, roughness: r });
+}
+const mSkin  = mat(0xf5c5a3);
+const mShirt = mat(0x60a5fa); // Brighter blue for dark bg contrast
+const mPants = mat(0x4f7a9e);
+const mHair  = mat(0x2a1a0a);
+const mShoe  = mat(0x475569, 0.2, 0.7); // Lighter shoe for contrast
+const mEye   = mat(0xffffff, 0, 0.4);
+const mPupil = mat(0x0f172a);
+
+function add(geo, mat, px=0, py=0, pz=0, sx=1, sy=1, sz=1, rx=0, ry=0, rz=0) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(px, py, pz);
+  m.scale.set(sx, sy, sz);
+  m.rotation.set(rx, ry, rz);
+  body.add(m); return m;
+}
+
+// Head
+add(new THREE.SphereGeometry(0.28,16,14), mSkin, 0,1.72,0, 1,1.1,0.95);
+add(new THREE.SphereGeometry(0.285,16,10,0,Math.PI*2,0,Math.PI*0.55), mHair, 0,1.72,0, 1,1.1,0.95);
+
+// Eyes
+[-1,1].forEach(s => {
+  add(new THREE.SphereGeometry(0.045,8,8), mEye, s*0.1, 1.74, 0.24);
+  add(new THREE.SphereGeometry(0.025,8,8), mPupil, s*0.1, 1.74, 0.265);
+});
+
+// Nose, ears
+add(new THREE.SphereGeometry(0.04,8,6), mSkin, 0,1.66,0.27, 1.2,0.8,1.3);
+[-1,1].forEach(s => add(new THREE.SphereGeometry(0.07,8,8), mSkin, s*0.3,1.72,0, 0.45,0.7,0.5));
+
+// Neck
+add(new THREE.CylinderGeometry(0.1,0.12,0.22,10), mSkin, 0,1.42,0);
+
+// Torso
+add(new THREE.CylinderGeometry(0.28,0.24,0.72,12), mShirt, 0,0.96,0);
+add(new THREE.CylinderGeometry(0.285,0.285,0.08,12), mShirt, 0,1.3,0);
+
+// Hips
+add(new THREE.CylinderGeometry(0.26,0.22,0.28,12), mPants, 0,0.54,0);
+
+// Shoulders + upper arms + elbows + forearms + hands
+[-1,1].forEach(s => {
+  add(new THREE.SphereGeometry(0.14,10,10), mShirt, s*0.38,1.22,0);
+  add(new THREE.CylinderGeometry(0.09,0.08,0.52,10), mShirt, s*0.48,0.9,0);
+  add(new THREE.SphereGeometry(0.085,8,8), mSkin, s*0.48,0.62,0);
+  add(new THREE.CylinderGeometry(0.075,0.065,0.46,10), mSkin, s*0.48,0.35,0);
+  add(new THREE.SphereGeometry(0.085,10,8), mSkin, s*0.48,0.1,0, 0.9,0.7,0.55);
+});
+
+// Thighs + knees + shins + shoes
+[-1,1].forEach(s => {
+  add(new THREE.CylinderGeometry(0.12,0.1,0.56,10), mPants, s*0.14,0.12,0);
+  add(new THREE.SphereGeometry(0.1,8,8), mPants, s*0.14,-0.18,0.02);
+  add(new THREE.CylinderGeometry(0.085,0.075,0.52,10), mPants, s*0.14,-0.48,0);
+  add(new THREE.BoxGeometry(0.14,0.1,0.28), mShoe, s*0.14,-0.77,0.05);
+});
+
+scene.add(body);
+
+// ── Attitude state ──
+let roll=0, pitch=0, yaw=0, yawAcc=0;
+let rawData = { ax:0, ay:0, az:1, gx:0, gy:0, gz:0, temp:0, ecg:0, bpm:0, leads_off:1 };
+let mode = 'accel';
+const ALPHA = 0.96;
+const DT    = 0.01; // 100Hz
+
+function setMode(m, el) {
+  mode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (m==='gyro') { roll=0; pitch=0; yaw=0; yawAcc=0; }
+}
+window.setMode = setMode;
+
+function computeAttitude(d) {
+  const { ax, ay, az, gx, gy, gz } = d;
+  if (mode === 'accel') {
+    roll  = Math.atan2(ay, az);
+    pitch = Math.atan2(-ax, Math.sqrt(ay*ay+az*az));
+    yawAcc += gz * DEG * DT; yaw = yawAcc;
+  } else if (mode === 'gyro') {
+    roll  += gx * DEG * DT;
+    pitch += gy * DEG * DT;
+    yawAcc += gz * DEG * DT; yaw = yawAcc;
+  } else {
+    const rA = Math.atan2(ay, az);
+    const pA = Math.atan2(-ax, Math.sqrt(ay*ay+az*az));
+    roll  = ALPHA*(roll  + gx*DEG*DT) + (1-ALPHA)*rA;
+    pitch = ALPHA*(pitch + gy*DEG*DT) + (1-ALPHA)*pA;
+    yawAcc += gz*DEG*DT; yaw = yawAcc;
+  }
+  document.getElementById('h-roll').innerHTML  = (roll/DEG).toFixed(1)+'<span class="hud-unit">°</span>';
+  document.getElementById('h-pitch').innerHTML = (pitch/DEG).toFixed(1)+'<span class="hud-unit">°</span>';
+  document.getElementById('h-yaw').innerHTML   = gz.toFixed(1)+'<span class="hud-unit">°/s</span>';
+}
+
+// Resize observer
+function resize3d() {
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  renderer.setSize(W, H, false);
+  camera.aspect = W/H; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize3d).observe(wrap);
+resize3d();
+
+// Render loop
+function animate() {
+  requestAnimationFrame(animate);
+  computeAttitude(rawData);
+  body.rotation.set(pitch, yaw, -roll);
+  camera.position.y = 0.5 + Math.sin(Date.now()*0.0004)*0.02;
+  camera.lookAt(0, 0.5, 0);
+  renderer.render(scene, camera);
+}
+animate();
+
+// ════════════════════════════════════════════════════════════
+//  ECG CANVAS 
+// ════════════════════════════════════════════════════════════
+const ecgCanvas = document.getElementById('ecg-canvas');
+const ecgPanel  = document.getElementById('ecg-panel');
+const ctx = ecgCanvas.getContext('2d');
+
+const ECG_BUFFER = 800;
+const ecgBuf = new Float32Array(ECG_BUFFER).fill(512);
+let ecgPtr = 0;
+let ecgMin = 0, ecgMax = 1023;
+const ECG_SMOOTH = 0.05;
+
+function resizeEcg() {
+  ecgCanvas.width  = ecgPanel.clientWidth;
+  ecgCanvas.height = ecgPanel.clientHeight;
+}
+new ResizeObserver(resizeEcg).observe(ecgPanel);
+resizeEcg();
+
+function pushEcg(val) {
+  ecgBuf[ecgPtr % ECG_BUFFER] = val;
+  ecgPtr++;
+  ecgMin = ecgMin * (1-ECG_SMOOTH) + Math.min(ecgMin, val) * ECG_SMOOTH;
+  ecgMax = ecgMax * (1-ECG_SMOOTH) + Math.max(ecgMax, val) * ECG_SMOOTH;
+  if (ecgMax - ecgMin < 50) { ecgMin = 400; ecgMax = 700; }
+}
+
+function drawEcg() {
+  requestAnimationFrame(drawEcg);
+  const W = ecgCanvas.width, H = ecgCanvas.height;
+  if (!W || !H) return;
+
+  // Background - dark theme
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines - darker for dark theme
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 0.5;
+  const gCols = 10, gRows = 4;
+  for (let i = 1; i < gCols; i++) {
+    ctx.beginPath(); ctx.moveTo(i*W/gCols, 0); ctx.lineTo(i*W/gCols, H); ctx.stroke();
+  }
+  for (let i = 1; i < gRows; i++) {
+    ctx.beginPath(); ctx.moveTo(0, i*H/gRows); ctx.lineTo(W, i*H/gRows); ctx.stroke();
+  }
+
+  // Baseline
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+
+  // Waveform - brighter teal for dark theme
+  const range = ecgMax - ecgMin || 1;
+  const pad = H * 0.12;
+  const drawH = H - pad*2;
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#2dd4bf'; 
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#2dd4bf';
+  ctx.shadowBlur = 8;
+
+  const startIdx = ecgPtr;
+  for (let i = 0; i < ECG_BUFFER; i++) {
+    const idx = (startIdx + i) % ECG_BUFFER;
+    const x = (i / (ECG_BUFFER-1)) * W;
+    const norm = (ecgBuf[idx] - ecgMin) / range;
+    const y = pad + drawH * (1 - norm);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Write-head cursor
+  const cx = ((ecgPtr % ECG_BUFFER) / (ECG_BUFFER-1)) * W;
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+  ctx.fillRect(cx, 0, 20, H);
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+}
+drawEcg();
+
+// ════════════════════════════════════════════════════════════
+//  WEBSOCKET & UI LOGIC
+// ════════════════════════════════════════════════════════════
+let ws = null;
+let isConnecting = false;
+
+function toggleConn() {
+  const btn = document.getElementById('conn-btn');
+  const spinner = document.getElementById('conn-spinner');
+  const connText = document.getElementById('conn-text');
+  
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) { 
+    ws.close(); 
+    return; 
+  }
+  
+  if (isConnecting) return;
+  
+  const url = document.getElementById('ws-url').value.trim();
+  isConnecting = true;
+  spinner.classList.add('show');
+  connText.textContent = 'Connecting...';
+  btn.disabled = true;
+  
+  ws = new WebSocket(url);
+  
+  ws.onopen = () => {
+    isConnecting = false;
+    spinner.classList.remove('show');
+    connText.textContent = 'Disconnect';
+    btn.disabled = false;
+    btn.classList.add('danger');
+    setStatus('connected', 'Connected');
+  };
+  
+  ws.onclose = () => {
+    isConnecting = false;
+    spinner.classList.remove('show');
+    connText.textContent = 'Connect';
+    btn.disabled = false;
+    btn.classList.remove('danger');
+    setStatus('disconnected', 'Disconnected');
+  };
+  
+  ws.onerror = (e) => {
+    isConnecting = false;
+    spinner.classList.remove('show');
+    connText.textContent = 'Connect';
+    btn.disabled = false;
+    setStatus('error', 'Connection Error');
+  };
+  
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.error) return;
+      rawData = d;
+      updateUI(d);
+    } catch (err) {
+      console.log('Parse error:', err);
+    }
+  };
+}
+window.toggleConn = toggleConn;
+
+function setStatus(s, text) {
+  const badge = document.getElementById('status-badge');
+  const dot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  
+  badge.className = 'status-badge ' + s;
+  dot.className = 'status-dot ' + s;
+  statusText.textContent = text;
+}
+
+// ════════════════════════════════════════════════════════════
+//  FALL DETECTION UI
+// ════════════════════════════════════════════════════════════
+const FALL_HISTORY_LEN = 20;
+const fallHistory = [];
+let flashTimer = null;
+
+function updateFall(prob, isFall) {
+  const panel   = document.getElementById('fall-panel');
+  const verdict = document.getElementById('fall-verdict');
+  const probNum = document.getElementById('fall-prob-num');
+  const bar     = document.getElementById('fall-bar');
+  const flash   = document.getElementById('fall-flash');
+  const histEl  = document.getElementById('fall-history');
+
+  const pct = (prob * 100).toFixed(1);
+
+  if (isFall) {
+    verdict.textContent = '⚠ FALL DETECTED';
+    verdict.className = 'fall-verdict v-fall';
+    panel.className = 'fall-panel fall-active';
+    probNum.className = 'fall-prob-num high';
+    bar.style.background = 'var(--danger)';
+    
+    flash.classList.add('show');
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => flash.classList.remove('show'), 400);
+  } else {
+    verdict.textContent = '✓ SAFE';
+    verdict.className = 'fall-verdict v-safe';
+    panel.className = 'fall-panel fall-safe';
+    probNum.className = 'fall-prob-num low';
+    bar.style.background = 'var(--success)';
+  }
+
+  probNum.textContent = pct + '%';
+  bar.style.width = Math.min(100, prob * 100) + '%';
+
+  // History ticks
+  fallHistory.push(isFall);
+  if (fallHistory.length > FALL_HISTORY_LEN) fallHistory.shift();
+  histEl.innerHTML = '';
+  fallHistory.forEach(f => {
+    const t = document.createElement('div');
+    t.className = 'fall-tick ' + (f ? 't-fall' : 't-safe');
+    histEl.appendChild(t);
+  });
+  for (let i = fallHistory.length; i < FALL_HISTORY_LEN; i++) {
+    const t = document.createElement('div');
+    t.className = 'fall-tick';
+    histEl.appendChild(t);
+  }
+}
+
+function barPct(v, range) { 
+  return Math.min(100, Math.max(0, (v+range)/(range*2)*100)); 
+}
+
+function getHrStatus(bpm) {
+  if (bpm <= 0) return { text: '--', color: 'var(--text-light)', class: '' };
+  if (bpm < 60)  return { text: 'Bradycardia', color: 'var(--warning)', class: 'status-warning' };
+  if (bpm <= 100) return { text: 'Normal', color: 'var(--success)', class: 'status-normal' };
+  return { text: 'Tachycardia', color: 'var(--danger)', class: 'status-alert' };
+}
+
+function updateUI(d) {
+  // IMU gauges
+  document.getElementById('g-ax').textContent = d.ax.toFixed(3)+' g';
+  document.getElementById('g-ay').textContent = d.ay.toFixed(3)+' g';
+  document.getElementById('g-az').textContent = d.az.toFixed(3)+' g';
+  document.getElementById('g-gx').textContent = d.gx.toFixed(2)+' °/s';
+  document.getElementById('g-gy').textContent = d.gy.toFixed(2)+' °/s';
+  document.getElementById('g-gz').textContent = d.gz.toFixed(2)+' °/s';
+  
+  document.getElementById('b-ax').style.width = barPct(d.ax,2)+'%';
+  document.getElementById('b-ay').style.width = barPct(d.ay,2)+'%';
+  document.getElementById('b-az').style.width = barPct(d.az,2)+'%';
+  document.getElementById('b-gx').style.width = barPct(d.gx,250)+'%';
+  document.getElementById('b-gy').style.width = barPct(d.gy,250)+'%';
+  document.getElementById('b-gz').style.width = barPct(d.gz,250)+'%';
+
+  // Temp, counter, accel magnitude
+  document.getElementById('h-temp').innerHTML    = d.temp.toFixed(1)+'<span class="hud-unit">°C</span>';
+  document.getElementById('h-counter').textContent = d.counter;
+  const mag = Math.sqrt(d.ax*d.ax+d.ay*d.ay+d.az*d.az);
+  document.getElementById('h-mag').innerHTML = mag.toFixed(2)+'<span class="hud-unit">g</span>';
+
+  // Leads-off per pin
+  const lo_p = d.lo_p ?? 1;
+  const lo_n = d.lo_n ?? 1;
+  const leads_off = d.leads_off ?? 1;
+
+  function setBadge(id, isOff, offLabel, okLabel) {
+    const el = document.getElementById(id);
+    if (isOff) {
+      el.className = 'lo-badge lo-off';
+      el.textContent = '✗ ' + offLabel;
+    } else {
+      el.className = 'lo-badge lo-ok';
+      el.textContent = '✓ ' + okLabel;
+    }
+  }
+  setBadge('lo-p-badge',      lo_p === 1, 'Disconnected', 'Connected');
+  setBadge('lo-n-badge',      lo_n === 1, 'Disconnected', 'Connected');
+  setBadge('lo-overall-badge', leads_off === 1, 'No Signal', 'Ready');
+
+  // Warning banner
+  const warnEl = document.getElementById('leads-warn');
+  const warnMessages = [];
+  if (lo_p)   warnMessages.push('LO+ electrode disconnected');
+  if (lo_n)   warnMessages.push('LO− electrode disconnected');
+  
+  if (leads_off || lo_p || lo_n) {
+    warnEl.classList.add('show');
+    document.getElementById('leads-warn-text').textContent = '⚠️ ' + warnMessages.join(' • ');
+  } else {
+    warnEl.classList.remove('show');
+  }
+
+  // ECG
+  pushEcg(d.ecg);
+  document.getElementById('g-ecg').textContent = d.ecg;
+  document.getElementById('b-ecg').style.width = (d.ecg / 4095 * 100) + '%';
+
+  // BPM
+  const bpmStr = d.bpm > 0 ? d.bpm.toFixed(0) : '--';
+  document.getElementById('bpm-num').textContent = bpmStr;
+  document.getElementById('s-bpm').textContent   = bpmStr;
+  const hrs = getHrStatus(d.bpm);
+  document.getElementById('s-hr-status').textContent = hrs.text;
+  document.getElementById('s-hr-status').className = hrs.class;
+  
+  if (d.bpm > 0) {
+    document.getElementById('heart-icon').style.animationDuration = (60/d.bpm).toFixed(2)+'s';
+  }
+  
+  // Fall detection
+  if (d.fall_prob !== undefined && d.fall_prob >= 0) {
+    updateFall(d.fall_prob, d.is_fall);
+  }
+
+  // Serial log
+  const serialEl = document.getElementById('serial');
+  const row = document.createElement('div');
+  row.textContent = `[${d.counter}] ax:${d.ax.toFixed(2)} ay:${d.ay.toFixed(2)} az:${d.az.toFixed(2)} | ECG:${d.ecg} | BPM:${d.bpm > 0 ? d.bpm.toFixed(0) : '--'}`;
+  serialEl.appendChild(row);
+  if (serialEl.children.length > 40) serialEl.removeChild(serialEl.firstChild);
+  serialEl.scrollTop = serialEl.scrollHeight;
+}
+
+
+</script>
+</body>
+</html>
