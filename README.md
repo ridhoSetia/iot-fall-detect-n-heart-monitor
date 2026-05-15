@@ -24,8 +24,8 @@ Sistem memisahkan peran menjadi dua node untuk efisiensi daya dan fokus fungsi:
 | Nama Anggota | NIM | Tanggung Jawab Utama |
 |--------------|-----|----------------------|
 | Muhammad Guntur Adyatma | 2309106023 | Publisher, AI |
-| Ridho Setiawan | 2409106029 | Subscriber, website integration |
-| Triya Khairun Nisa | 2409106038 | Publisher, website integration |
+| Ridho Setiawan | 2409106029 | Publisher, website integration |
+| Triya Khairun Nisa | 2409106038 | Subscriber, website integration |
 
 
 ## 🛠️ Komponen yang Digunakan
