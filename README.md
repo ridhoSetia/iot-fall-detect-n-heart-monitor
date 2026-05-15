@@ -11,7 +11,7 @@
 
 ## 📖 Deskripsi Proyek
 Proyek ini mengembangkan sistem **AIoT (Artificial Intelligence of Things)** terdistribusi untuk memantau keselamatan lansia secara real-time. Sistem dirancang untuk mendeteksi kejadian jatuh (*fall detection*) dan memantau kondisi biometrik menggunakan pendekatan **TinyML** yang berjalan di perangkat *edge* (ESP32). 
-Dengan menggabungkan data kinetik dari akselerometer dan data detak jantung, sistem mampu membedakan antara benturan biasa dengan jatuh sungguhan melalui logika *sensor fusion*. Data dikirim secara nirkabel menggunakan protokol MQTT ke stasiun pemantau, dilengkapi dengan mekanisme *fail-safe*, redundansi jaringan, serta notifikasi jarak jauh melalui platform Web.
+Dengan menggabungkan data kinetik dari akselerometer dan data detak jantung, sistem mampu membedakan antara benturan biasa dengan jatuh sungguhan melalui logika *sensor fusion*. Data dikirim secara nirkabel menggunakan protokol MQTT ke stasiun pemantauan.
 
 ## 🏗️ Arsitektur Sistem
 Sistem memisahkan peran menjadi dua node untuk efisiensi daya dan fokus fungsi:
