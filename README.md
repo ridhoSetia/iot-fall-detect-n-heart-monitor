@@ -10,13 +10,13 @@
 # Judul: Sistem Monitoring Aktivitas dan Deteksi Jatuh Lansia Berbasis AIoT 
 
 ## 📖 Deskripsi Proyek
-Proyek ini mengembangkan sistem **AIoT (Artificial Intelligence of Things)** terdistribusi untuk memantau keselamatan lansia secara real-time. Sistem dirancang untuk mendeteksi kejadian jatuh (*fall detection*) dan memantau kondisi biometrik menggunakan pendekatan **TinyML** yang berjalan di perangkat *edge* (ESP32). 
+Proyek ini mengembangkan sistem **AIoT (Artificial Intelligence of Things)** terdistribusi untuk memantau keselamatan lansia. Sistem dirancang untuk mendeteksi kejadian jatuh (*fall detection*) dan memantau kondisi biometrik menggunakan pendekatan **TinyML** yang berjalan di perangkat *edge* (ESP32). 
 Dengan menggabungkan data kinetik dari akselerometer dan data detak jantung, sistem mampu membedakan antara benturan biasa dengan jatuh sungguhan melalui logika *sensor fusion*. Data dikirim secara nirkabel menggunakan protokol MQTT ke stasiun pemantauan.
 
 ## 🏗️ Arsitektur Sistem
 Sistem memisahkan peran menjadi dua node untuk efisiensi daya dan fokus fungsi:
 - **📍 Node 1: Wearable Device (Publisher)**  
-  Menempel di pinggang (*Center of Mass*) untuk stabilitas data. Bertanggung jawab atas akuisisi sensor, inferensi AI di tempat (*Edge Computing*), dan pengambilan keputusan lokal.
+  Menempel di pinggang (*Center of Mass*) untuk stabilitas data. Bertanggung jawab atas akuisisi sensor dan inferensi AI di tempat (*Edge Computing*).
 - **🖥️ Node 2: Monitoring Station (Subscriber)**  
   Diletakkan di ruang pengawas/meja perawat. Bertugas menerima data, menampilkan peringatan visual/audio secara *remote*, dan memicu alarm darurat.
 
