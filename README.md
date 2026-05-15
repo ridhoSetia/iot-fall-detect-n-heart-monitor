@@ -42,4 +42,5 @@ Sistem memisahkan peran menjadi dua node untuk efisiensi daya dan fokus fungsi:
 - Output: Buzzer Aktif & LED Indikator
 
 ### ℹ️ Board Schematic
+![Board_Schematics](Heart_Rate_Monitor_demo_bb.png)
 
