@@ -167,11 +167,11 @@ float computeRMSSD() {
 
 bool isBpmAbnormal() {
   if (bpm == 0) return false;
-  return (bpm < 60.0f || bpm > 120.0f);
+  return (bpm < 50.0f || bpm > 120.0f);
 }
 bool isHrvAnomaly() {
   float rmssd = computeRMSSD();
-  return (rmssd > 80.0f);
+  return (rmssd > 120.0f || rmssd < 30.0f);
 }
 
 // ══════════════════════════════════════════════════════════════

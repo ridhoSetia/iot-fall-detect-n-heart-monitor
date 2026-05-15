@@ -1,469 +1,595 @@
 <!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Patient Monitoring Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --bg:          #070a13;
-      --surface:     rgba(17, 24, 39, 0.65); /* Glassmorphism base */
-      --surface2:    #1a2235;
-      --border:      rgba(31, 45, 69, 0.8);
-      --accent:      #00d4aa;
-      --accent-dim:  #00d4aa22;
-      --danger:      #ff3b5c;
-      --danger-dim:  #ff3b5c22;
-      --warn:        #ffb800;
-      --warn-dim:    #ffb80022;
-      --info:        #4f9eff;
-      --info-dim:    #4f9eff22;
-      --text:        #f8fafc;
-      --text-muted:  #94a3b8; /* Kontras ditingkatkan */
-      --mono:        'Space Mono', monospace;
-      --sans:        'DM Sans', sans-serif;
-    }
-    
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      min-height: 100vh;
-      padding: 24px;
-      overflow-x: hidden;
-    }
-    
-    /* Efek scanline halus */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,170,0.02) 2px, rgba(0,212,170,0.02) 4px);
-      pointer-events: none; z-index: 9999;
-    }
-
-    /* ── Header & Controls ── */
-    header {
-      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px;
-      margin-bottom: 24px; padding-bottom: 20px;
-      border-bottom: 1px solid var(--border);
-    }
-    .header-left h1 { font-family: var(--mono); font-size: 20px; letter-spacing: 0.08em; color: var(--accent); }
-    .header-left p  { font-size: 13px; color: var(--text-muted); margin-top: 4px; font-family: var(--mono); }
-    
-    .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .btn {
-      background: transparent; border: 1px solid var(--border); color: var(--text);
-      padding: 8px 16px; border-radius: 6px; font-family: var(--mono); font-size: 12px;
-      cursor: pointer; transition: all 0.3s ease; backdrop-filter: blur(4px);
-    }
-    .btn:hover { background: var(--surface2); }
-    
-    /* Tombol Emergency (Default Hidden) */
-    .emergency-controls { display: none; gap: 10px; animation: fadeIn 0.3s ease; }
-    .btn-mute { border-color: var(--warn); color: var(--warn); }
-    .btn-mute:hover { background: var(--warn-dim); }
-    .btn-reset { background: var(--danger-dim); border-color: var(--danger); color: var(--danger); font-weight: bold; }
-    .btn-reset:hover { background: var(--danger); color: #fff; box-shadow: 0 0 15px var(--danger); }
-
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-
-    #conn-badge { display: flex; align-items: center; gap: 8px; font-size: 12px; font-family: var(--mono); color: var(--text-muted); padding-left: 12px; border-left: 1px solid var(--border); }
-    #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transition: background 0.3s; }
-    #conn-dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-
-    /* ── Layout Grid Hierarki ── */
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 320px;
-      grid-template-areas: 
-        "fall fall log"
-        "bpm hrv log"
-        "posture sensor log"
-        "ecg ecg log";
-      gap: 20px;
-    }
-
-    /* Media Query untuk Mobile */
-    @media (max-width: 992px) {
-      .grid {
-        grid-template-columns: 1fr 1fr;
-        grid-template-areas: 
-          "fall fall"
-          "bpm hrv"
-          "posture sensor"
-          "ecg ecg"
-          "log log";
-      }
-    }
-    @media (max-width: 768px) {
-      .grid {
-        grid-template-columns: 1fr;
-        grid-template-areas: 
-          "fall"
-          "bpm"
-          "hrv"
-          "ecg"
-          "posture"
-          "sensor"
-          "log";
-      }
-      .controls { width: 100%; justify-content: flex-start; }
-      #fall-card { flex-direction: column; align-items: flex-start; gap: 16px; }
-      .fall-prob-bar-wrap { margin: 0; width: 100%; }
-    }
-
-    /* ── Cards (Glassmorphism & Transitions) ── */
-    .card {
-      background: var(--surface);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 12px; padding: 22px; position: relative; overflow: hidden;
-      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .card::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: var(--accent); opacity: 0.3; transition: opacity 0.4s;
-    }
-    .card:hover::after { opacity: 1; }
-    .card-label { display: flex; justify-content: space-between; font-size: 12px; font-family: var(--mono); letter-spacing: 0.1em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px; }
-    .card-value { font-family: var(--mono); font-size: 48px; font-weight: 700; line-height: 1; color: var(--accent); transition: color 0.4s; }
-    .card-unit  { font-family: var(--sans); font-size: 13px; color: var(--text-muted); margin-top: 8px; }
-
-    /* ── Komponen Card Spesifik ── */
-    #fall-card { grid-area: fall; display: flex; align-items: center; justify-content: space-between; }
-    #fall-card::after { display: none; }
-    #fall-status-value { font-family: var(--mono); font-size: 28px; font-weight: 700; transition: color 0.4s; }
-    .fall-prob-bar-wrap { flex: 1; margin: 0 36px; }
-    .bar-track { background: var(--surface2); border-radius: 6px; height: 12px; overflow: hidden; border: 1px solid var(--border); }
-    #fall-prob-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s ease, background 0.4s; }
-    
-    #bpm-card { grid-area: bpm; }
-    #hrv-card { grid-area: hrv; }
-    #posture-card { grid-area: posture; }
-    #leads-card { grid-area: sensor; }
-    #ecg-card { grid-area: ecg; padding-bottom: 10px; }
-    #log-card { grid-area: log; display: flex; flex-direction: column; max-height: 600px; }
-
-    /* Animasi Heartbeat Dinamis */
-    .heart-icon { display: inline-block; color: var(--danger); font-size: 16px; animation: heartbeat 1s infinite; }
-    @keyframes heartbeat {
-      0% { transform: scale(1); }
-      15% { transform: scale(1.3); }
-      30% { transform: scale(1); }
-      45% { transform: scale(1.3); }
-      60% { transform: scale(1); }
-      100% { transform: scale(1); }
-    }
-
-    /* ── Medical ECG Grid Visual ── */
-    .ecg-container { position: relative; width: 100%; height: 180px; border-radius: 8px; overflow: hidden; background-color: #030712; }
-    .ecg-grid-bg {
-      position: absolute; inset: 0; z-index: 0;
-      background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
-      background-image:
-        linear-gradient(rgba(0,212,170,0.15) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,212,170,0.15) 1px, transparent 1px),
-        linear-gradient(rgba(0,212,170,0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,212,170,0.05) 1px, transparent 1px);
-    }
-    #ecgChart { position: relative; z-index: 1; width: 100% !important; height: 100% !important; }
-
-    /* ── System Activity Log ── */
-    .log-list { list-style: none; overflow-y: auto; flex: 1; margin-top: 12px; padding-right: 8px; display: flex; flex-direction: column; gap: 8px; }
-    .log-list::-webkit-scrollbar { width: 6px; }
-    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    .log-item { font-family: var(--mono); font-size: 12px; padding: 10px; border-radius: 6px; background: var(--surface2); border-left: 3px solid var(--info); animation: slideIn 0.3s ease; }
-    .log-time { color: var(--text-muted); margin-right: 6px; font-size: 11px; }
-    .log-danger { border-left-color: var(--danger); background: var(--danger-dim); }
-    .log-warn { border-left-color: var(--warn); background: var(--warn-dim); }
-    .log-safe { border-left-color: var(--accent); }
-    @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
-
-    /* Alert States */
-    .state-safe    { color: var(--accent) !important; }
-    .state-fall    { color: var(--danger) !important; text-shadow: 0 0 15px var(--danger-dim); }
-    .card.alert-danger { border-color: var(--danger); box-shadow: 0 0 20px var(--danger-dim); }
-    
-    footer { margin-top: 30px; text-align: center; font-size: 11px; font-family: var(--mono); color: var(--text-muted); opacity: 0.6; }
-  </style>
-</head>
-<body>
-
-  <!-- Header & Controls -->
-  <header>
-    <div class="header-left">
-      <h1>PATIENT MONITORING SYSTEM</h1>
-      <p>ESP32 · MPU-6050 · AD8232 · WebSocket</p>
-    </div>
-    
-    <div class="controls">
-      <!-- Tombol ini muncul via JS saat status bahaya -->
-      <div class="emergency-controls" id="emergency-controls">
-        <button class="btn btn-mute" onclick="logEvent('Buzzer disenyapkan oleh operator', 'warn')">🔕 Mute Buzzer</button>
-        <button class="btn btn-reset" onclick="logEvent('Emergency Reset diaktifkan', 'info')">⚠ Reset Status</button>
-      </div>
-      
-      <div id="conn-badge">
-        <div id="conn-dot"></div>
-        <span id="conn-label">CONNECTING...</span>
-      </div>
-    </div>
-  </header>
-
-  <!-- Grid Utama -->
-  <div class="grid">
-
-    <!-- Fall Status (Utama) -->
-    <div class="card" id="fall-card">
-      <div>
-        <div class="card-label">FALL STATUS</div>
-        <div id="fall-status-value" style="color: var(--text-muted);">WAITING...</div>
-      </div>
-      <div class="fall-prob-bar-wrap">
-        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-          <span style="font-size: 11px; font-family: var(--mono); color: var(--text-muted);">FALL PROBABILITY</span>
-          <span id="fall-prob-pct" style="font-size: 11px; font-family: var(--mono); color: var(--text);">0.00</span>
-        </div>
-        <div class="bar-track"><div id="fall-prob-fill"></div></div>
-      </div>
-    </div>
-
-    <!-- Heart Rate -->
-    <div class="card" id="bpm-card">
-      <div class="card-label">HEART RATE <span class="heart-icon" id="heart-anim">❤️</span></div>
-      <div class="card-value" id="bpm-value">--</div>
-      <div class="card-unit">BPM · Normal: 60–120</div>
-    </div>
-
-    <!-- HRV -->
-    <div class="card" id="hrv-card">
-      <div class="card-label">HRV (RMSSD)</div>
-      <div class="card-value" id="hrv-value" style="font-size: 40px;">--</div>
-      <div class="card-unit">ms · Threshold: &gt; 80 ms</div>
-    </div>
-
-    <!-- Posture -->
-    <div class="card" id="posture-card">
-      <div class="card-label">POSISI TUBUH</div>
-      <div id="posture-value" style="font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 8px;">❓ UNKNOWN</div>
-      <div id="posture-sub" class="card-unit">Menunggu data sensor...</div>
-    </div>
-
-    <!-- Sensor Status -->
-    <div class="card" id="leads-card">
-      <div class="card-label">SENSOR STATUS</div>
-      <div id="leads-value" style="font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 8px;">--</div>
-      <div id="leads-sub" class="card-unit">Menjalankan diagnostik...</div>
-    </div>
-
-    <!-- ECG Chart dengan Grid Medis -->
-    <div class="card" id="ecg-card">
-      <div class="card-label">ECG WAVEFORM (LEAD I)</div>
-      <div class="ecg-container">
-        <div class="ecg-grid-bg"></div>
-        <canvas id="ecgChart"></canvas>
-      </div>
-    </div>
-
-    <!-- System Activity Log (Fitur Baru) -->
-    <div class="card" id="log-card">
-      <div class="card-label">SYSTEM ACTIVITY LOG</div>
-      <ul class="log-list" id="activity-log">
-        <li class="log-item log-info"><span class="log-time">[System]</span> Menunggu koneksi...</li>
-      </ul>
-    </div>
-
-  </div>
-
-  <footer>SISTEM MONITORING MEDIS BERBASIS IOT · KEL-1 · 2025</footer>
-
-  <script>
-    // ── System Logger ─────────────────────────────────────────────
-    function logEvent(message, type = 'info') {
-      const logContainer = document.getElementById('activity-log');
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('id-ID', { hour12: false });
-      
-      const li = document.createElement('li');
-      li.className = `log-item log-${type}`;
-      li.innerHTML = `<span class="log-time">[${timeStr}]</span> ${message}`;
-      
-      logContainer.prepend(li);
-      // Batasi jumlah log agar memori DOM tidak membengkak
-      if (logContainer.children.length > 30) {
-        logContainer.removeChild(logContainer.lastChild);
-      }
-    }
-
-    // ── Chart.js ECG ─────────────────────────────────────────────
-    const ctx = document.getElementById('ecgChart').getContext('2d');
-    const ecgChart = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ 
-        label: 'ECG', data: [],
-        borderColor: '#00d4aa', borderWidth: 2, pointRadius: 0, tension: 0.4
-      }]},
-      options: {
-        animation: false, responsive: true, maintainAspectRatio: false,
-        layout: { padding: { top: 10, bottom: 10 } },
-        plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: {
-          x: { display: false },
-          y: { 
-            display: false, 
-            min: 0, max: 4095 
+<html class="light" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Dashboard Monitoring</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'on-tertiary': '#ffffff',
+              'on-surface-variant': '#3e4850',
+              'on-secondary': '#ffffff',
+              'inverse-surface': '#2d3133',
+              'surface-container': '#eceef0',
+              surface: '#f7f9fb',
+              'primary-fixed': '#c9e6ff',
+              'inverse-on-surface': '#eff1f3',
+              'error-container': '#ffdad6',
+              'outline-variant': '#bec8d2',
+              'tertiary-fixed': '#6ffbbe',
+              'secondary-fixed': '#d3e4fe',
+              'secondary-fixed-dim': '#b7c8e1',
+              'on-tertiary-fixed-variant': '#005236',
+              'on-error': '#ffffff',
+              'on-surface': '#191c1e',
+              error: '#ba1a1a',
+              'inverse-primary': '#89ceff',
+              'on-primary-container': '#003751',
+              background: '#f7f9fb',
+              'primary-container': '#0ea5e9',
+              'surface-variant': '#e0e3e5',
+              'surface-container-high': '#e6e8ea',
+              'on-background': '#191c1e',
+              tertiary: '#006c49',
+              'surface-container-low': '#f2f4f6',
+              'tertiary-fixed-dim': '#4edea3',
+              'surface-container-lowest': '#ffffff',
+              'surface-dim': '#d8dadc',
+              'on-primary-fixed': '#001e2f',
+              primary: '#006591',
+              'surface-container-highest': '#e0e3e5',
+              outline: '#6e7881',
+              'surface-bright': '#f7f9fb',
+              'secondary-container': '#d0e1fb',
+              'on-tertiary-container': '#003b26',
+              'on-secondary-fixed-variant': '#38485d',
+              'on-primary': '#ffffff',
+              'tertiary-container': '#00b17b',
+              secondary: '#505f76',
+              'surface-tint': '#006591',
+              'primary-fixed-dim': '#89ceff',
+              'on-tertiary-fixed': '#002113',
+              'on-primary-fixed-variant': '#004c6e',
+              'on-error-container': '#93000a',
+              'on-secondary-fixed': '#0b1c30',
+              'on-secondary-container': '#54647a'
+            },
+            borderRadius: {
+              DEFAULT: '0.125rem',
+              lg: '0.25rem',
+              xl: '0.5rem',
+              full: '0.75rem'
+            },
+            spacing: {
+              lg: '40px',
+              sm: '12px',
+              margin: '32px',
+              xl: '64px',
+              base: '8px',
+              xs: '4px',
+              gutter: '24px',
+              md: '24px'
+            },
+            fontFamily: {
+              'body-lg': ['Inter'],
+              'headline-md': ['Inter'],
+              'headline-lg': ['Inter'],
+              'data-label': ['JetBrains Mono'],
+              'body-sm': ['Inter'],
+              'label-caps': ['Inter'],
+              'data-display': ['JetBrains Mono']
+            },
+            fontSize: {
+              'body-lg': ['16px', { lineHeight: '1.5', fontWeight: '400' }],
+              'headline-md': ['24px', { lineHeight: '1.3', fontWeight: '600' }],
+              'headline-lg': ['32px', { lineHeight: '1.2', letterSpacing: '-0.02em', fontWeight: '600' }],
+              'data-label': ['12px', { lineHeight: '1', fontWeight: '700' }],
+              'body-sm': ['14px', { lineHeight: '1.5', fontWeight: '400' }],
+              'label-caps': ['11px', { lineHeight: '1', letterSpacing: '0.05em', fontWeight: '700' }],
+              'data-display': ['28px', { lineHeight: '1', letterSpacing: '-0.05em', fontWeight: '500' }]
+            }
           }
         }
       }
-    });
-    const MAX_ECG_POINTS = 150;
-
-    // ── State Trackers (untuk menghindari spam log) ───────────────
-    let lastFallState = null;
-    let lastBuzzerState = null;
-
-    // ── WebSocket ─────────────────────────────────────────────────
-    // Disesuaikan untuk environment dev & prod ESP32
-    const wsUrl = window.location.hostname === '' || window.location.hostname === 'localhost' 
-        ? 'ws://192.168.4.1/ws' // Default IP Access Point ESP32
-        : `ws://${window.location.host}/ws`;
-        
-    const ws = new WebSocket(wsUrl);
-    ws.onopen  = () => { 
-      document.getElementById('conn-dot').classList.add('live'); 
-      document.getElementById('conn-label').innerText = 'LIVE';
-      logEvent('WebSocket terhubung ke ESP32', 'info');
-    };
-    ws.onclose = () => { 
-      document.getElementById('conn-dot').classList.remove('live'); 
-      document.getElementById('conn-label').innerText = 'DISCONNECTED';
-      logEvent('Koneksi terputus dari perangkat', 'danger');
-    };
-    ws.onerror = ()  => { document.getElementById('conn-label').innerText = 'ERROR'; };
-    ws.onmessage = (e) => {
-      try {
-        updateDashboard(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Data parse error", err);
+    </script>
+    <style>
+      :root {
+        --color-accent:  #006c49;
+        --color-danger:  #ba1a1a;
+        --color-warn:    #b45309;
+        --color-muted:   #6e7881;
+        --color-primary: #006591;
       }
-    };
+      .clinical-shadow {
+        box-shadow: 0 1px 3px 0 rgba(0,0,0,.05), 0 1px 2px 0 rgba(0,0,0,.03);
+      }
+      .ecg-grid-bg {
+        background-image:
+          linear-gradient(rgba(0,108,73,.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,108,73,.1) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      /* Connection badge */
+      #conn-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #6e7881;
+        transition: background .3s;
+      }
+      #conn-dot.live   { background: #006c49; animation: pulse-dot 1.4s ease-in-out infinite; }
+      #conn-dot.error  { background: #ba1a1a; }
+      @keyframes pulse-dot {
+        0%,100% { opacity: 1; }
+        50%      { opacity: .4; }
+      }
+      /* Fall-alert state */
+      .alert-danger { border-color: #ba1a1a !important; background: #fff8f8 !important; }
+      .state-fall  { color: #ba1a1a !important; }
+      .state-safe  { color: #006c49 !important; }
+    </style>
+  </head>
 
-    // ── Helpers ───────────────────────────────────────────────────
-    const POSTURE_META = {
-      STANDING: { icon: '🧍', label: 'BERDIRI', sub: 'Posisi tegak normal', color: 'var(--accent)' },
-      SITTING:  { icon: '🪑', label: 'DUDUK', sub: 'Posisi duduk terdeteksi', color: 'var(--accent)' },
-      LYING:    { icon: '🛏', label: 'BERBARING', sub: 'Pasien dalam posisi rebah', color: 'var(--warn)' },
-      UNKNOWN:  { icon: '❓', label: 'UNKNOWN', sub: 'Sensor bergerak / kalibrasi', color: 'var(--text-muted)' },
+  <body class="bg-background text-on-surface font-body-lg antialiased">
+
+    <!-- ── Top Bar ─────────────────────────────────────────────── -->
+    <header class="sticky top-0 z-40 bg-surface border-b border-outline-variant px-margin py-sm flex justify-between items-center">
+      <div class="flex items-center gap-sm">
+        <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">monitor_heart</span>
+        <span class="font-headline-md text-headline-md text-on-surface leading-none">Monitoring Pasien <span class="text-primary"></span></span>
+      </div>
+
+      <div class="flex items-center gap-md">
+        <!-- Emergency dismiss — only visible on FALL -->
+        <button id="emergency-controls"
+          class="hidden items-center gap-xs bg-error text-on-error px-sm py-xs rounded-full font-label-caps text-label-caps"
+          onclick="dismissAlarm()">
+          <span class="material-symbols-outlined text-sm">notification_important</span>
+          DISMISS ALARM
+        </button>
+
+        <!-- Connection badge -->
+        <div class="flex items-center gap-xs border border-outline-variant px-sm py-xs rounded-full">
+          <div id="conn-dot"></div>
+          <span id="conn-label" class="font-data-label text-data-label text-outline">CONNECTING…</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="p-margin">
+      <div class="grid max-w-[1440px] mx-auto grid-cols-12 gap-gutter">
+
+        <!-- ── Hero: Fall Status ──────────────────────────────── -->
+        <section class="col-span-12 lg:col-span-9 bg-surface p-md rounded-xl border border-outline-variant clinical-shadow transition-colors duration-300" id="fall-card">
+          <div class="flex justify-between items-start mb-base">
+            <div>
+              <span class="font-data-label text-data-label text-outline uppercase tracking-wider">Patient Security Protocol</span>
+              <h2 class="font-headline-lg text-headline-lg text-on-surface mt-xs">
+                Fall Status: <span id="fall-status-value" class="text-tertiary">Waiting…</span>
+              </h2>
+            </div>
+            <div class="flex items-center gap-xs text-tertiary bg-tertiary/10 px-sm py-xs rounded-full" id="status-badge">
+              <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1;">check_circle</span>
+              <span class="font-label-caps text-label-caps">Real-time Analysis</span>
+            </div>
+          </div>
+
+          <div class="mt-md">
+            <div class="flex justify-between items-end mb-xs">
+              <span class="font-body-sm text-body-sm text-outline">Fall Probability</span>
+              <span class="font-data-label text-data-label text-on-surface" id="fall-prob-pct">—</span>
+            </div>
+            <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-500" id="fall-prob-fill" style="width:0%;background:var(--color-accent)"></div>
+            </div>
+            <p class="mt-sm font-body-sm text-body-sm text-on-surface-variant" id="fall-detail">
+              Menunggu data dari perangkat…
+            </p>
+          </div>
+        </section>
+
+        <!-- ── Sidebar: Activity Log ───────────────────────────── -->
+        <aside class="col-span-12 lg:col-span-3 row-span-3 bg-surface border border-outline-variant rounded-xl clinical-shadow flex flex-col overflow-hidden">
+          <div class="p-md border-b border-outline-variant bg-surface-container-low flex items-center gap-xs">
+            <span class="material-symbols-outlined text-sm text-outline">history_edu</span>
+            <h3 class="font-label-caps text-label-caps text-on-surface">System Activity Log</h3>
+          </div>
+          <ul class="flex-1 overflow-y-auto p-md space-y-md list-none" id="activity-log">
+            <li class="flex gap-sm">
+            </li>
+          </ul>
+        </aside>
+
+        <!-- ── Vitals Grid ──────────────────────────────────────── -->
+        <div class="col-span-12 lg:col-span-9 grid grid-cols-1 md:grid-cols-4 gap-gutter">
+
+          <!-- Heart Rate -->
+          <div class="bg-surface p-md rounded-xl border border-outline-variant clinical-shadow">
+            <div class="flex justify-between items-center mb-md">
+              <span class="font-data-label text-data-label text-outline uppercase">Heart Rate</span>
+              <span class="material-symbols-outlined text-primary text-xl">favorite</span>
+            </div>
+            <div class="flex items-baseline gap-xs">
+              <span class="font-data-display text-data-display text-on-surface transition-colors" id="bpm-value">—</span>
+              <span class="font-body-sm text-body-sm text-outline">BPM</span>
+            </div>
+            <p class="mt-xs font-body-sm text-body-sm text-on-surface-variant" id="bpm-status">Menunggu data</p>
+          </div>
+
+          <!-- HRV -->
+          <div class="bg-surface p-md rounded-xl border border-outline-variant clinical-shadow">
+            <div class="flex justify-between items-center mb-md">
+              <span class="font-data-label text-data-label text-outline uppercase">HRV Index</span>
+              <span class="material-symbols-outlined text-tertiary text-xl">insights</span>
+            </div>
+            <div class="flex items-baseline gap-xs">
+              <span class="font-data-display text-data-display text-on-surface transition-colors" id="hrv-value">—</span>
+              <span class="font-body-sm text-body-sm text-outline">ms</span>
+            </div>
+            <div class="mt-md">
+              <div class="flex justify-between text-[10px] text-outline mb-xs uppercase">
+                <span>Stable</span><span>High Stress</span>
+              </div>
+              <div class="h-1.5 w-full bg-surface-container rounded-full relative">
+                <div id="hrv-marker" class="absolute -top-1 w-3 h-3 bg-tertiary border-2 border-white rounded-full shadow-sm transition-all duration-500" style="left:50%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Body Posture -->
+          <div class="bg-surface p-md rounded-xl border border-outline-variant clinical-shadow">
+            <div class="flex justify-between items-center mb-md">
+              <span class="font-data-label text-data-label text-outline uppercase">Body Posture</span>
+              <span class="material-symbols-outlined text-secondary text-xl">accessibility_new</span>
+            </div>
+            <div class="flex items-baseline gap-xs">
+              <span class="font-data-display text-data-display text-on-surface text-[22px]" id="posture-value">—</span>
+            </div>
+            <p class="mt-sm font-body-sm text-body-sm text-on-surface-variant" id="posture-sub">Menunggu data sensor</p>
+          </div>
+
+          <!-- Sensor Status -->
+          <div class="bg-surface p-md rounded-xl border border-outline-variant clinical-shadow">
+            <div class="flex justify-between items-center mb-md">
+              <span class="font-data-label text-data-label text-outline uppercase">Sensor Status</span>
+              <span class="material-symbols-outlined text-tertiary text-xl">sensors</span>
+            </div>
+            <div class="flex items-baseline gap-xs">
+              <span class="font-data-display text-data-display text-on-surface text-[22px]" id="leads-value">—</span>
+            </div>
+            <p class="mt-sm font-body-sm text-body-sm text-outline" id="leads-sub">Menunggu koneksi</p>
+          </div>
+
+        </div>
+
+        <!-- ── ECG Waveform ─────────────────────────────────────── -->
+        <section class="col-span-12 lg:col-span-9 bg-surface border border-outline-variant rounded-xl clinical-shadow overflow-hidden">
+          <div class="px-md py-sm border-b border-outline-variant flex justify-between items-center">
+            <h3 class="font-label-caps text-label-caps text-on-surface uppercase tracking-widest">ECG Waveform — Live</h3>
+            <div class="flex gap-md items-center">
+              <div class="flex items-center gap-xs">
+                <span class="w-2 h-2 rounded-full bg-tertiary" id="ecg-live-dot"></span>
+                <span class="text-[10px] font-data-label text-outline" id="ecg-live-label">WAITING</span>
+              </div>
+            </div>
+          </div>
+          <div class="h-64 bg-inverse-surface relative ecg-grid-bg">
+            <canvas id="ecgCanvas" class="absolute inset-0 w-full h-full"></canvas>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ── Footer ───────────────────────────────────────────── -->
+      <footer class="mt-xl pt-lg border-t border-outline-variant flex justify-between items-center text-outline">
+        <div class="flex items-center gap-md">
+          <span class="font-data-label text-[10px]">Deteksi Jatuh dan Sistem Monitoring Detak Jantung</span>
+          <span class="font-data-label text-[10px]">Status: <span id="footer-status">Initializing…</span></span>
+        </div>
+        <div class="flex items-center gap-base">
+          <span class="font-body-sm text-[11px]">Developed by kelompok 1</span>
+          <div class="w-1.5 h-1.5 rounded-full bg-tertiary"></div>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+    // ═══════════════════════════════════════════════════════════════
+    //  CONFIG — sesuaikan jika port FastAPI berbeda
+    // ═══════════════════════════════════════════════════════════════
+    const WS_PATH = '/ws'
+
+    // Bangun ws:// URL dari host browser saat ini (cocok dev & prod)
+    const wsUrl = `ws://${window.location.host}${WS_PATH}`
+
+    // ═══════════════════════════════════════════════════════════════
+    //  CHART.JS — ECG real-time
+    // ═══════════════════════════════════════════════════════════════
+    const MAX_ECG_POINTS = 150
+
+    const ecgChart = new Chart(document.getElementById('ecgCanvas'), {
+      type: 'line',
+      data: {
+        labels: new Array(MAX_ECG_POINTS).fill(''),
+        datasets: [{
+          label: 'ECG',
+          data: new Array(MAX_ECG_POINTS).fill(null),
+          borderColor: '#6ffbbe',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.3,
+          fill: false
+        }]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+          x: { display: false },
+          y: { display: false, min: 0, max: 4095 }
+        }
+      }
+    })
+
+    function pushEcg(val) {
+      const d = ecgChart.data.datasets[0].data
+      d.push(val)
+      if (d.length > MAX_ECG_POINTS) d.shift()
+      ecgChart.update('none')
     }
 
-    // ── Main dashboard update ─────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+    //  ACTIVITY LOG
+    // ═══════════════════════════════════════════════════════════════
+    const MAX_LOG = 30
+    const logColors = {
+      info:    '#006591', // primary
+      safe:    '#006c49', // tertiary
+      warn:    '#b45309',
+      danger:  '#ba1a1a', // error
+      default: '#6e7881'  // outline
+    }
+
+    function logEvent(message, type = 'info') {
+      const ul = document.getElementById('activity-log')
+      const now = new Date().toLocaleTimeString('id-ID', { hour12: false })
+      const color = logColors[type] ?? logColors.default
+
+      const li = document.createElement('li')
+      li.className = 'flex gap-sm'
+      li.innerHTML = `
+        <div class="mt-1 w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></div>
+        <div>
+          <div class="font-data-label text-data-label" style="color:${color}">${now}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-xs">${message}</div>
+        </div>`
+
+      ul.prepend(li)
+      while (ul.children.length > MAX_LOG) ul.removeChild(ul.lastChild)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POSTURE METADATA
+    // ═══════════════════════════════════════════════════════════════
+    const POSTURE_META = {
+      STANDING: { label: 'BERDIRI',   sub: 'Posisi tegak normal',        color: 'var(--color-accent)' },
+      SITTING:  { label: 'DUDUK',     sub: 'Posisi duduk terdeteksi',    color: 'var(--color-accent)' },
+      LYING:    { label: 'BERBARING', sub: 'Pasien dalam posisi rebah',  color: 'var(--color-warn)'   },
+      UNKNOWN:  { label: 'UNKNOWN',   sub: 'Sensor bergerak / kalibrasi',color: 'var(--color-muted)'  }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  STATE TRACKER (hindari spam log)
+    // ═══════════════════════════════════════════════════════════════
+    let lastFallState   = null
+    let lastBuzzerState = null
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DASHBOARD UPDATER — dipanggil tiap pesan WebSocket
+    // ═══════════════════════════════════════════════════════════════
     function updateDashboard(data) {
-      const fallStatus   = data.fallStatus || 'Waiting...';
-      const bpm          = data.bpm ?? 0;
-      const fallProb     = data.fallProb ?? 0.0;
-      const buzzerStatus = data.buzzerStatus || 'OFF';
-      const hrv          = data.hrv ?? 0.0;
-      const posture      = data.posture || 'UNKNOWN';
-      
-      const isDisconn = fallStatus === 'DISCONNECTED';
-      const isFall    = fallStatus === 'FALL';
+      const fallStatus   = data.fallStatus   ?? 'Waiting...'
+      const bpm          = data.bpm          ?? 0
+      const fallProb     = data.fallProb     ?? 0.0
+      const buzzerStatus = data.buzzerStatus ?? 'OFF'
+      const hrv          = data.hrv          ?? 0.0
+      const posture      = data.posture      ?? 'UNKNOWN'
+      const ecgRaw       = data.ecg_raw
 
-      // ── Logging System Changes ──
-      if (fallStatus !== lastFallState && fallStatus !== 'Waiting...') {
-        if (isFall) logEvent('CRITICAL: Jatuh terdeteksi!', 'danger');
-        else if (fallStatus === 'SAFE' && lastFallState === 'FALL') logEvent('Status kembali AMAN', 'safe');
-        lastFallState = fallStatus;
+      const isFall   = fallStatus === 'FALL'
+      const isDisc   = fallStatus === 'DISCONNECTED'
+      const isWait   = fallStatus === 'Waiting...'
+
+      // ── Logging perubahan status ──────────────────────────────
+      if (fallStatus !== lastFallState && !isWait) {
+        if (isFall)                                logEvent('CRITICAL: Jatuh terdeteksi!', 'danger')
+        else if (fallStatus === 'SAFE' && lastFallState === 'FALL')
+                                                   logEvent('Status kembali AMAN', 'safe')
+        else if (isDisc)                           logEvent('Sensor DISCONNECTED — periksa perangkat', 'warn')
+        lastFallState = fallStatus
+      }
+      if (buzzerStatus !== lastBuzzerState) {
+        if (buzzerStatus === 'ON')
+          logEvent(`ALARM AKTIF: ${data.buzzerReason || 'Anomali terdeteksi'}`, 'warn')
+        else if (lastBuzzerState === 'ON')
+          logEvent('Alarm dinonaktifkan', 'info')
+        lastBuzzerState = buzzerStatus
       }
 
-      if (buzzerStatus !== lastBuzzerState && buzzerStatus !== 'OFF') {
-        if (buzzerStatus === 'ON') logEvent(`ALARM AKTIF: ${data.buzzerReason || 'Anomali terdeteksi'}`, 'warn');
-        lastBuzzerState = buzzerStatus;
+      // ── Emergency button ──────────────────────────────────────
+      const emergencyBtn = document.getElementById('emergency-controls')
+      if (isFall || buzzerStatus === 'ON') {
+        emergencyBtn.classList.remove('hidden')
+        emergencyBtn.classList.add('flex')
+      } else {
+        emergencyBtn.classList.add('hidden')
+        emergencyBtn.classList.remove('flex')
       }
 
-      // ── Controls Visibility ──
-      const emergencyControls = document.getElementById('emergency-controls');
-      emergencyControls.style.display = (isFall || buzzerStatus === 'ON') ? 'flex' : 'none';
+      // ── Fall Status card ──────────────────────────────────────
+      const statusEl  = document.getElementById('fall-status-value')
+      const fillEl    = document.getElementById('fall-prob-fill')
+      const pctEl     = document.getElementById('fall-prob-pct')
+      const fallCard  = document.getElementById('fall-card')
+      const detailEl  = document.getElementById('fall-detail')
 
-      // ── Fall Status & Probability ──
-      const statusEl = document.getElementById('fall-status-value');
-      const fillEl   = document.getElementById('fall-prob-fill');
-      const pctEl    = document.getElementById('fall-prob-pct');
-      const fallCard = document.getElementById('fall-card');
+      const pct = (fallProb * 100).toFixed(1)
+      fillEl.style.width = pct + '%'
+      fillEl.style.background =
+        fallProb >= 0.5  ? 'var(--color-danger)' :
+        fallProb >= 0.35 ? 'var(--color-warn)'   : 'var(--color-accent)'
+      pctEl.textContent = isWait ? '—' : pct + '%'
 
-      fillEl.style.width = (fallProb * 100).toFixed(1) + '%';
-      pctEl.innerText = fallProb.toFixed(3);
-      fillEl.style.background = fallProb >= 0.50 ? 'var(--danger)' : fallProb >= 0.35 ? 'var(--warn)' : 'var(--accent)';
-
-      statusEl.className = '';
-      fallCard.classList.remove('alert-danger');
+      statusEl.className = ''
+      fallCard.classList.remove('alert-danger')
 
       if (isFall) {
-        statusEl.innerText = '⚠ JATUH'; statusEl.classList.add('state-fall');
-        fallCard.classList.add('alert-danger');
+        statusEl.textContent = '⚠ JATUH'
+        statusEl.classList.add('state-fall')
+        fallCard.classList.add('alert-danger')
+        detailEl.textContent = 'Jatuh terdeteksi — harap segera periksa pasien!'
       } else if (fallStatus === 'SAFE') {
-        statusEl.innerText = '✓ AMAN'; statusEl.classList.add('state-safe');
+        statusEl.textContent = '✓ AMAN'
+        statusEl.classList.add('state-safe')
+        detailEl.textContent = `Probabilitas jatuh: ${pct}% — posisi stabil.`
+      } else if (isDisc) {
+        statusEl.textContent = '⚡ LEPAS'
+        statusEl.style.color = 'var(--color-warn)'
+        detailEl.textContent = 'Sensor terputus. Periksa kabel dan elektroda.'
       } else {
-        statusEl.innerText = fallStatus;
+        statusEl.textContent = fallStatus
+        detailEl.textContent = 'Menganalisis data…'
       }
 
-      // ── BPM & Heartbeat Animation ──
-      const bpmEl = document.getElementById('bpm-value');
-      const heartAnim = document.getElementById('heart-anim');
-      
-      if (isDisconn || bpm === 0) {
-        bpmEl.innerText = '--'; bpmEl.style.color = 'var(--text-muted)';
-        heartAnim.style.animationDuration = '0s';
+      // ── BPM ───────────────────────────────────────────────────
+      const bpmEl     = document.getElementById('bpm-value')
+      const bpmStatus = document.getElementById('bpm-status')
+
+      if (isDisc || bpm === 0) {
+        bpmEl.textContent   = '—'
+        bpmEl.style.color   = 'var(--color-muted)'
+        bpmStatus.textContent = 'Sensor terputus'
       } else {
-        bpmEl.innerText = bpm.toFixed(1);
-        // Dinamika kecepatan animasi berdasarkan BPM (60 detik / bpm)
-        heartAnim.style.animationDuration = `${(60 / bpm).toFixed(2)}s`;
-        
-        if (bpm < 50 || bpm > 130) bpmEl.style.color = 'var(--danger)';
-        else bpmEl.style.color = 'var(--accent)';
-      }
-
-      // ── HRV ──
-      const hrvEl = document.getElementById('hrv-value');
-      if (isDisconn || hrv === 0) {
-        hrvEl.innerText = '--'; hrvEl.style.color = 'var(--text-muted)';
-      } else {
-        hrvEl.innerText = hrv.toFixed(1);
-        hrvEl.style.color = hrv > 80 ? 'var(--warn)' : 'var(--accent)';
-      }
-
-      // ── Posture ──
-      const meta = POSTURE_META[posture] || POSTURE_META.UNKNOWN;
-      const postureEl = document.getElementById('posture-value');
-      postureEl.innerHTML = `${meta.icon} ${meta.label}`;
-      postureEl.style.color = meta.color;
-      document.getElementById('posture-sub').innerText = meta.sub;
-
-      // ── Sensor / Leads ──
-      const leadsEl = document.getElementById('leads-value');
-      const leadsSubEl = document.getElementById('leads-sub');
-      if (isDisconn) {
-        leadsEl.innerText = '⚠ TERLEPAS'; leadsEl.style.color = 'var(--warn)';
-        leadsSubEl.innerText = 'Periksa elektroda AD8232';
-      } else if (fallStatus !== 'Waiting...') {
-        leadsEl.innerText = '✓ AKTIF'; leadsEl.style.color = 'var(--accent)';
-        leadsSubEl.innerText = 'Sinyal sensor stabil';
-      }
-
-      // ── ECG Chart Real-Time ──
-      if (data.ecg_raw !== undefined && data.ecg_raw !== null && !isDisconn) {
-        if (ecgChart.data.labels.length >= MAX_ECG_POINTS) {
-          ecgChart.data.labels.shift();
-          ecgChart.data.datasets[0].data.shift();
+        bpmEl.textContent = bpm.toFixed(0)
+        if (bpm < 50 || bpm > 130) {
+          bpmEl.style.color   = 'var(--color-danger)'
+          bpmStatus.textContent = bpm < 50 ? 'Bradikardia — BPM rendah' : 'Takikardia — BPM tinggi'
+        } else {
+          bpmEl.style.color   = 'var(--color-accent)'
+          bpmStatus.textContent = 'Ritme normal'
         }
-        ecgChart.data.labels.push('');
-        ecgChart.data.datasets[0].data.push(data.ecg_raw);
-        ecgChart.update();
+      }
+
+      // ── HRV ───────────────────────────────────────────────────
+      const hrvEl     = document.getElementById('hrv-value')
+      const hrvMarker = document.getElementById('hrv-marker')
+
+      if (isDisc || hrv === 0) {
+        hrvEl.textContent   = '—'
+        hrvEl.style.color   = 'var(--color-muted)'
+        hrvMarker.style.left = '50%'
+      } else {
+        hrvEl.textContent = hrv.toFixed(1)
+        hrvEl.style.color = hrv > 120 || hrv < 30 ? 'var(--color-warn)' : 'var(--color-accent)'
+        // Marker: hrv 0–150ms → 0–100%
+        const pos = Math.min(100, Math.max(0, (hrv / 150) * 100))
+        hrvMarker.style.left = pos + '%'
+      }
+
+      // ── Posture ───────────────────────────────────────────────
+      const meta      = POSTURE_META[posture] || POSTURE_META.UNKNOWN
+      const postureEl = document.getElementById('posture-value')
+      postureEl.textContent  = `${meta.label}`
+      postureEl.style.color  = meta.color
+      document.getElementById('posture-sub').textContent = meta.sub
+
+      // ── Sensor / Leads ────────────────────────────────────────
+      const leadsEl    = document.getElementById('leads-value')
+      const leadsSubEl = document.getElementById('leads-sub')
+
+      if (isDisc) {
+        leadsEl.textContent   = '⚠ LEPAS'
+        leadsEl.style.color   = 'var(--color-warn)'
+        leadsSubEl.textContent = 'Periksa elektroda AD8232'
+      } else if (!isWait) {
+        leadsEl.textContent   = '✓ AKTIF'
+        leadsEl.style.color   = 'var(--color-accent)'
+        leadsSubEl.textContent = 'Sinyal sensor stabil'
+      }
+
+      // ── ECG ───────────────────────────────────────────────────
+      if (ecgRaw !== undefined && ecgRaw !== null && !isDisc) {
+        pushEcg(ecgRaw)
+        document.getElementById('ecg-live-label').textContent = 'LIVE'
+        document.getElementById('ecg-live-dot').style.background = '#6ffbbe'
+      }
+
+      // ── Footer ────────────────────────────────────────────────
+      document.getElementById('footer-status').textContent =
+        isDisc ? 'Disconnected' : isWait ? 'Initializing…' : 'Operational'
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  DISMISS ALARM (kirim perintah ke backend bila perlu)
+    // ═══════════════════════════════════════════════════════════════
+    function dismissAlarm() {
+      logEvent('Alarm di-dismiss oleh operator', 'info')
+      document.getElementById('emergency-controls').classList.add('hidden')
+      document.getElementById('emergency-controls').classList.remove('flex')
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  WEBSOCKET — terhubung ke FastAPI backend
+    // ═══════════════════════════════════════════════════════════════
+    let ws
+    let reconnectTimer = null
+    const RECONNECT_DELAY_MS = 3000
+
+    function connect() {
+      ws = new WebSocket(wsUrl)
+
+      ws.onopen = () => {
+        clearTimeout(reconnectTimer)
+        document.getElementById('conn-dot').className = 'live'
+        document.getElementById('conn-label').textContent = 'LIVE'
+        document.getElementById('footer-status').textContent = 'Operational'
+        logEvent('WebSocket terhubung ke backend FastAPI', 'safe')
+      }
+
+      ws.onclose = () => {
+        document.getElementById('conn-dot').className = 'error'
+        document.getElementById('conn-label').textContent = 'DISCONNECTED'
+        document.getElementById('ecg-live-label').textContent = 'OFFLINE'
+        document.getElementById('ecg-live-dot').style.background = '#ba1a1a'
+        logEvent(`Koneksi terputus. Mencoba kembali dalam ${RECONNECT_DELAY_MS / 1000}s…`, 'danger')
+        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS)
+      }
+
+      ws.onerror = (err) => {
+        document.getElementById('conn-label').textContent = 'ERROR'
+        logEvent('WebSocket error — lihat console untuk detail', 'danger')
+        console.error('[WS] Error:', err)
+      }
+
+      ws.onmessage = (e) => {
+        try {
+          updateDashboard(JSON.parse(e.data))
+        } catch (err) {
+          console.error('[WS] Parse error:', err, e.data)
+        }
       }
     }
-  </script>
-</body>
+
+    connect()
+    </script>
+  </body>
 </html>
